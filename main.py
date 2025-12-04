@@ -8,6 +8,10 @@ import sys
 import traceback
 from datetime import datetime
 from typing import Dict, Any
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 from services.sheets import SheetsService
 from services.validation import ValidationService
@@ -187,7 +191,7 @@ def run_pm01(
     
     Returns PM01 result dict or None if failed.
     """
-    max_retries = config.get('maxRetries', 3)
+    max_retries = config.get('maxRetries')
     attempt = 0
     
     while attempt < max_retries:
@@ -247,7 +251,7 @@ def run_pm05(
     
     Returns PM05 result dict or None if failed.
     """
-    max_retries = config.get('maxRetries', 3)
+    max_retries = config.get('maxRetries')
     attempt = 0
     
     while attempt < max_retries:

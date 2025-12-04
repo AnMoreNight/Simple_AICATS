@@ -65,14 +65,21 @@ class Config:
         config = {
             'respondentsSheet': get_string('respondentsSheet'),
             'validationLogSheet': get_string('validationLogSheet'),
+            'diagnosisDetailSheet': get_string('diagnosisDetailSheet'),
             'errorLogSheet': get_string('errorLogSheet'),
+            'questionSheet': get_string('questionSheet'),
+            'skillcriteriaSheet': get_string('skillcriteriaSheet'),
+            'typecriteriaSheet': get_string('typecriteriaSheet'),
+            'defaultTimeZone': get_string('defaultTimeZone'),
             'llmProvider': get_string('llmProvider'),
             'llmApiUrl': get_string('llmApiUrl'),
-            'llmApiKey': get_string('llmApiKey'),
             'llmModel': get_string('llmModel'),
+            'llmApiKey': get_string('llmApiKey'),
             'maxRetries': get_number('maxRetries'),
-            'promptDiagnosis': get_string('promptDiagnosis', required=False),
-            'questionSheet': get_string('questionSheet'),
+            'promptPM1': get_string('promptPM1', required=False),
+            'promptPM5': get_string('promptPM5', required=False),
+            'promptPM2': get_string('promptPM2', required=False),
+            'promptPM3': get_string('promptPM3', required=False),
         }
         
         if not config['llmApiKey']:

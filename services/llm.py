@@ -117,7 +117,7 @@ class LLMService:
   "decrease_factor": <optional float>
 }""")
         
-        prompt_text = self.config.get('promptDiagnosis', '').strip()
+        prompt_text = self.config.get('promptPM1', '').strip()
         if prompt_text:
             lines.append("")
             lines.append("# Additional Instructions")
@@ -192,7 +192,9 @@ class LLMService:
         if not api_key:
             raise ValueError("API key not configured. Add llmApiKey to the Config sheet in your Google Spreadsheet.")
         
-        provider = self.config.get('llmProvider', 'chatgpt')
+        provider = self.config.get('llmProvider')
+        if not provider:
+            raise ValueError("llmProvider not configured in Config sheet.")
         
         try:
             if provider == 'chatgpt':
@@ -205,9 +207,13 @@ class LLMService:
     
     def _invoke_chatgpt(self, prompt: str, system_message: str) -> Optional[str]:
         """Invokes the ChatGPT API."""
-        url = self.config.get('llmApiUrl', 'https://api.openai.com/v1/chat/completions')
+        url = self.config.get('llmApiUrl')
+        if not url:
+            raise ValueError("llmApiUrl not configured in Config sheet.")
         api_key = self.config['llmApiKey']
-        model = self.config.get('llmModel', 'gpt-4o')
+        model = self.config.get('llmModel')
+        if not model:
+            raise ValueError("llmModel not configured in Config sheet.")
         
         headers = {
             'Authorization': f'Bearer {api_key}',

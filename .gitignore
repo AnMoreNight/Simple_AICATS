@@ -2,3 +2,6 @@
 __init__.py
 core/__init__.py
 services/__init__.py
+__pycache__/
+core/__pycache__/
+services/__pycache__/

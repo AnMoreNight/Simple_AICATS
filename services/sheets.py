@@ -9,6 +9,10 @@ from google.oauth2.service_account import Credentials
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 class SheetsService:

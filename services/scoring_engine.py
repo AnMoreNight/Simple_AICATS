@@ -14,24 +14,58 @@ class ScoringEngine:
     SUB_WEIGHT = 0.20      # 20%
     PROCESS_WEIGHT = 0.20  # 20%
     
+    # Question to category mapping (Q1-Q6)
+    QUESTION_CATEGORY_MAP = {
+        1: {
+            'primary': '問題理解',
+            'sub': '情報整理',
+            'process': 'clarity'
+        },
+        2: {
+            'primary': '論理構成',
+            'sub': '因果推論',
+            'process': 'structure'
+        },
+        3: {
+            'primary': '仮説構築',
+            'sub': '前提設定',
+            'process': 'hypothesis'
+        },
+        4: {
+            'primary': 'AI指示',
+            'sub': '要件定義力',
+            'process': 'prompt_clarity'
+        },
+        5: {
+            'primary': 'AI成果検証力',
+            'sub': '品質チェック力',
+            'process': 'quality_check'
+        },
+        6: {
+            'primary': '優先順位判断',
+            'sub': '意思決定',
+            'process': 'consistency'
+        }
+    }
+    
     def __init__(self, config: Dict[str, Any]):
         """Initialize scoring engine with configuration."""
         self.config = config
     
-    def calculate_pm01_scores(
+    def aggregate_pm01_raw_scores(
         self,
-        llm_response: Dict[str, Any],
+        pm01_raw_results: Dict[str, Dict[str, Any]],
         questions: List[Dict[str, Any]]
     ) -> Dict[str, Any] | None:
         """
-        Calculate PM01 scores from LLM response.
+        Aggregate PM01 raw scores (without LLM analysis).
         
-        Returns structured PM01 result:
+        Returns aggregated scores:
         {
-            "primary_scores": {...},
-            "sub_scores": {...},
-            "process_scores": {...},
-            "aes_scores": {...},
+            "scores_primary": {...},
+            "scores_sub": {...},
+            "process": {...},
+            "aes": {...},
             "total_score": <float>,
             "per_question": {...}
         }
@@ -51,45 +85,74 @@ class ScoringEngine:
                     continue
                 
                 question_id = f"Q{q_num}"
-                q_data = llm_response.get('per_question', {}).get(question_id, {})
+                q_data = pm01_raw_results.get(question_id, {})
+                
+                # Get category mapping for this question
+                category_map = self.QUESTION_CATEGORY_MAP.get(q_num, {})
+                primary_category = category_map.get('primary', '')
+                sub_category = category_map.get('sub', '')
+                process_item = category_map.get('process', '')
                 
                 # Extract scores
                 primary = parse_number(q_data.get('primary_score', 0), 0)
                 sub = parse_number(q_data.get('sub_score', 0), 0)
                 process = parse_number(q_data.get('process_score', 0), 0)
-                aes = parse_number(q_data.get('aes_score', 0), 0)
+                
+                # Extract increase/decrease points
+                increase_points = parse_number(q_data.get('increase_points', 0), 0)
+                decrease_points = parse_number(q_data.get('decrease_points', 0), 0)
+                
+                # Apply increase/decrease adjustments
+                primary_adjusted = max(0, min(5, primary + increase_points - decrease_points))
+                sub_adjusted = max(0, min(5, sub + increase_points - decrease_points))
+                process_adjusted = max(0, min(5, process + increase_points - decrease_points))
+                
+                # Extract AES components (clarity, logic, relevance)
+                aes_clarity = parse_number(q_data.get('aes_clarity', 0), 0)
+                aes_logic = parse_number(q_data.get('aes_logic', 0), 0)
+                aes_relevance = parse_number(q_data.get('aes_relevance', 0), 0)
+                
+                # Calculate AES score: (clarity + logic + relevance) / 3
+                aes_score = (aes_clarity + aes_logic + aes_relevance) / 3 if (aes_clarity + aes_logic + aes_relevance) > 0 else 0
                 
                 # Store per-question data
                 per_question[question_id] = {
-                    'primary_score': primary,
-                    'sub_score': sub,
-                    'process_score': process,
-                    'aes_score': aes,
-                    'comment': q_data.get('comment', '')
+                    'primary_score': round(primary_adjusted, 2),
+                    'sub_score': round(sub_adjusted, 2),
+                    'process_score': round(process_adjusted, 2),
+                    'aes_score': round(aes_score, 2),
+                    'aes_clarity': aes_clarity,
+                    'aes_logic': aes_logic,
+                    'aes_relevance': aes_relevance,
+                    'increase_points': increase_points,
+                    'decrease_points': decrease_points,
+                    'evidence': q_data.get('evidence', ''),
+                    'judgment_reason': q_data.get('judgment_reason', '')
                 }
                 
-                # Aggregate scores by skill type
-                primary_skill = question.get('primary_skill', '')
-                sub_skill = question.get('sub_skill', '')
-                process_skill = question.get('process_skill', '')
+                # Use adjusted scores for aggregation
+                primary = primary_adjusted
+                sub = sub_adjusted
+                process = process_adjusted
                 
-                if primary_skill:
-                    if primary_skill not in primary_scores:
-                        primary_scores[primary_skill] = []
-                    primary_scores[primary_skill].append(primary)
+                # Aggregate scores by category
+                if primary_category:
+                    if primary_category not in primary_scores:
+                        primary_scores[primary_category] = []
+                    primary_scores[primary_category].append(primary)
                 
-                if sub_skill:
-                    if sub_skill not in sub_scores:
-                        sub_scores[sub_skill] = []
-                    sub_scores[sub_skill].append(sub)
+                if sub_category:
+                    if sub_category not in sub_scores:
+                        sub_scores[sub_category] = []
+                    sub_scores[sub_category].append(sub)
                 
-                if process_skill:
-                    if process_skill not in process_scores:
-                        process_scores[process_skill] = []
-                    process_scores[process_skill].append(process)
+                if process_item:
+                    if process_item not in process_scores:
+                        process_scores[process_item] = []
+                    process_scores[process_item].append(process)
                 
                 # AES is per-question
-                aes_scores[question_id] = aes
+                aes_scores[question_id] = round(aes_score, 2)
             
             # Calculate averages for aggregated scores
             primary_avg = {
@@ -113,28 +176,166 @@ class ScoringEngine:
             avg_aes = sum(aes_scores.values()) / len(aes_scores) if aes_scores else 0
             
             # Weighted total: PRIMARY 60% + SUB 20% + PROCESS 20%
+            # AES is not included in total score (used as supplementary indicator)
             weighted_total = (
                 avg_primary * self.PRIMARY_WEIGHT +
                 avg_sub * self.SUB_WEIGHT +
                 avg_process * self.PROCESS_WEIGHT
             )
             
-            # Apply increase/decrease rules if configured
-            weighted_total = self._apply_scoring_rules(weighted_total, llm_response)
-            
             return {
-                'primary_scores': primary_avg,
-                'sub_scores': sub_avg,
-                'process_scores': process_avg,
-                'aes_scores': aes_scores,
+                'scores_primary': primary_avg,
+                'scores_sub': sub_avg,
+                'process': process_avg,
+                'aes': aes_scores,
                 'total_score': round(weighted_total, 2),
-                'per_question': per_question,
-                'raw_llm_response': llm_response
+                'per_question': per_question
             }
             
         except Exception as e:
-            print(f"Error calculating PM01 scores: {e}")
+            print(f"Error aggregating PM01 raw scores: {e}")
             return None
+    
+    def combine_pm01_final(
+        self,
+        aggregated_scores: Dict[str, Any],
+        pm01_final_analysis: Dict[str, Any],
+        pm01_raw_results: Dict[str, Dict[str, Any]]
+    ) -> Dict[str, Any] | None:
+        """
+        STEP 3: Combine aggregated scores with LLM analysis.
+        
+        Returns structured PM01 Final result:
+        {
+            "scores_primary": {...},
+            "scores_sub": {...},
+            "process": {...},
+            "aes": {...},
+            "total_score": <float>,
+            "per_question": {...},
+            "top_strengths": [...],
+            "top_weaknesses": [...],
+            "overall_summary": "<string>",
+            "ai_use_level": "<string>",
+            "recommendations": [...],
+            "debug_raw": {...}
+        }
+        """
+        try:
+            # Use LLM analysis for insights
+            top_strengths = pm01_final_analysis.get('top_strengths', [])
+            top_weaknesses = pm01_final_analysis.get('top_weaknesses', [])
+            overall_summary = pm01_final_analysis.get('overall_summary', '')
+            ai_use_level = pm01_final_analysis.get('ai_use_level', '標準')
+            recommendations = pm01_final_analysis.get('recommendations', [])
+            
+            # Combine aggregated scores with LLM analysis
+            return {
+                'scores_primary': aggregated_scores.get('scores_primary', {}),
+                'scores_sub': aggregated_scores.get('scores_sub', {}),
+                'process': aggregated_scores.get('process', {}),
+                'aes': aggregated_scores.get('aes', {}),
+                'total_score': aggregated_scores.get('total_score', 0),
+                'per_question': aggregated_scores.get('per_question', {}),
+                'top_strengths': top_strengths,
+                'top_weaknesses': top_weaknesses,
+                'overall_summary': overall_summary,
+                'ai_use_level': ai_use_level,
+                'recommendations': recommendations,
+                'debug_raw': pm01_raw_results  # Store raw results for debugging
+            }
+            
+        except Exception as e:
+            print(f"Error combining PM01 Final: {e}")
+            return None
+    
+    def process_pm05_final(
+        self,
+        pm05_llm_response: Dict[str, Any],
+        pm01_final: Dict[str, Any]
+    ) -> Dict[str, Any] | None:
+        """
+        STEP 4: Process PM05 Final consistency check result.
+        
+        Returns PM05 Final result:
+        {
+            "status": "valid|caution|re-evaluate",
+            "consistency_score": <1-5>,
+            "issues": [...],
+            "summary": "<string>"
+        }
+        """
+        try:
+            consistency_score = pm05_llm_response.get('consistency_score', 0)
+            status = pm05_llm_response.get('status', 'caution')
+            issues = pm05_llm_response.get('issues', [])
+            summary = pm05_llm_response.get('summary', '')
+            
+            return {
+                'status': status,
+                'consistency_score': round(consistency_score, 2),
+                'issues': issues,
+                'summary': summary
+            }
+        except Exception as e:
+            print(f"Error processing PM05 Final: {e}")
+            return None
+    
+    def _identify_top_items(
+        self,
+        primary_avg: Dict[str, float],
+        sub_avg: Dict[str, float],
+        process_avg: Dict[str, float],
+        top_n: int,
+        is_strength: bool
+    ) -> List[Dict[str, Any]]:
+        """Identify top strengths or weaknesses."""
+        all_items = []
+        
+        for skill, score in primary_avg.items():
+            all_items.append({'category': 'primary', 'skill': skill, 'score': score})
+        for skill, score in sub_avg.items():
+            all_items.append({'category': 'sub', 'skill': skill, 'score': score})
+        for skill, score in process_avg.items():
+            all_items.append({'category': 'process', 'skill': skill, 'score': score})
+        
+        # Sort by score (descending for strengths, ascending for weaknesses)
+        sorted_items = sorted(all_items, key=lambda x: x['score'], reverse=is_strength)
+        
+        return sorted_items[:top_n]
+    
+    def _generate_summary(
+        self,
+        total_score: float,
+        primary_avg: Dict[str, float],
+        sub_avg: Dict[str, float],
+        process_avg: Dict[str, float]
+    ) -> str:
+        """Generate overall summary based on scores."""
+        if total_score >= 4.0:
+            level = "強い"
+        elif total_score >= 2.6:
+            level = "標準"
+        else:
+            level = "弱い"
+        
+        return f"総合スコア: {total_score:.2f} ({level})"
+    
+    def _determine_ai_use_level(
+        self,
+        total_score: float,
+        process_avg: Dict[str, float]
+    ) -> str:
+        """Determine AI use level based on scores."""
+        prompt_clarity = process_avg.get('prompt_clarity', 0)
+        quality_check = process_avg.get('quality_check', 0)
+        
+        if prompt_clarity >= 4.0 and quality_check >= 4.0:
+            return "高度"
+        elif prompt_clarity >= 3.0 and quality_check >= 3.0:
+            return "標準"
+        else:
+            return "基礎"
     
     def calculate_pm05_validation(
         self,
@@ -225,19 +426,4 @@ class ScoringEngine:
             print(f"Error calculating PM05 validation: {e}")
             return None
     
-    def _apply_scoring_rules(self, base_score: float, llm_response: Dict[str, Any]) -> float:
-        """
-        Apply increase/decrease scoring rules.
-        
-        Returns adjusted score.
-        """
-        # Check for increase/decrease flags in LLM response
-        increase_factor = llm_response.get('increase_factor', 0)
-        decrease_factor = llm_response.get('decrease_factor', 0)
-        
-        # Apply adjustments
-        adjusted_score = base_score + increase_factor - decrease_factor
-        
-        # Clamp to valid range (0-5)
-        return max(0.0, min(5.0, adjusted_score))
 

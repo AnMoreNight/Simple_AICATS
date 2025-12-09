@@ -14,7 +14,6 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-
 class SheetsService:
     """Service for interacting with Google Sheets."""
     
@@ -74,7 +73,30 @@ class SheetsService:
             return None
     
     def get_respondent_rows(self) -> List[Dict[str, Any]]:
-        """Reads respondent data rows from the configured sheet."""
+        """Reads respondent data rows from the configured sheet.
+        
+        Expected format:
+        Column 0: No.
+        Column 1: 作成日 (Creation Date)
+        Column 2: お名前/姓 (Family Name)
+        Column 3: お名前/名 (Given Name)
+        Column 4: 所属部門（部署）名 (Department Name)
+        Column 5: 会社名（法人名） (Company Name)
+        Column 6: 年齢層 (Age Group)
+        Column 7: Q1 Answer
+        Column 8: Q1 Reason
+        Column 9: Q2 Answer
+        Column 10: Q2 Reason
+        Column 11: Q3 Answer
+        Column 12: Q3 Reason
+        Column 13: Q4 Answer
+        Column 14: Q4 Reason
+        Column 15: Q5 Answer
+        Column 16: Q5 Reason
+        Column 17: Q6 Answer
+        Column 18: Q6 Reason
+        Column 19: Status
+        """
         self._require_config()
         sheet = self._get_sheet(self.config['respondentsSheet'])
         if not sheet:
@@ -88,17 +110,23 @@ class SheetsService:
         
         rows = []
         for i, row in enumerate(values[1:], start=2):
-            if len(row) < 18:
+            if len(row) < 20:
                 continue
             
-            respondent_id = str(row[2] or '').strip()
-            family_name = str(row[3] or '').strip()
-            given_name = str(row[4] or '').strip()
+            # Column 0: No. (respondent ID)
+            respondent_id = str(row[0] or '').strip()
+            # Column 2: お名前/姓 (Family Name)
+            family_name = str(row[2] or '').strip()
+            # Column 3: お名前/名 (Given Name)
+            given_name = str(row[3] or '').strip()
             name = f"{family_name} {given_name}".strip() if family_name and given_name else (family_name or given_name or '').strip()
             
-            # Q1-Q6 are at indices 12-17
-            answers = [self._sanitize_answer(str(row[i] or '')) for i in range(12, 18)]
-            status = str(row[22] or '').strip() if len(row) > 22 else ''
+            # Q1-Q6 answers are at columns 7, 9, 11, 13, 15, 17
+            answer_columns = [7, 9, 11, 13, 15, 17]
+            answers = [self._sanitize_answer(str(row[col] or '')) for col in answer_columns]
+            
+            # Column 19: Status
+            status = str(row[19] or '').strip() if len(row) > 19 else ''
             
             rows.append({
                 'id': respondent_id,
@@ -112,7 +140,16 @@ class SheetsService:
         return rows
     
     def get_question_rows(self) -> List[Dict[str, Any]]:
-        """Reads question rows from the question sheet."""
+        """Reads question rows from the question sheet.
+        
+        Expected format:
+        - Column A: Question ID (Q1, Q2, Q3, Q4, Q5, Q6)
+        - Column B: Main question text (multiple choice)
+        - Column C: Follow-up question text
+        Each question spans 2 rows:
+          Row 1: A=Q1, B=main question
+          Row 2: C=follow-up question
+        """
         self._require_config()
         sheet = self._get_sheet(self.config['questionSheet'])
         if not sheet:
@@ -121,31 +158,65 @@ class SheetsService:
         values = sheet.get_all_values()
         questions = []
         
-        for row in values[1:]:
-            if len(row) < 5:
+        # Process rows in pairs (each question has 2 rows)
+        i = 0
+        while i < len(values):
+            # Skip header row
+            if i == 0:
+                i += 1
+                continue
+            
+            # Get first row of question pair
+            if i >= len(values):
+                break
+            
+            row1 = values[i]
+            if len(row1) < 1:
+                i += 1
+                continue
+            
+            # Extract question ID from column A (e.g., "Q1")
+            question_id = str(row1[0] or '').strip().upper()
+            if not question_id.startswith('Q'):
+                i += 1
                 continue
             
             try:
-                no = int(float(row[0]))
+                # Extract number from Q1, Q2, etc.
+                no = int(question_id[1:])
             except (ValueError, TypeError):
+                i += 1
                 continue
             
             # Only process questions 1-6
             if no < 1 or no > self.DIAGNOSIS_QUESTION_COUNT:
+                i += 1
                 continue
             
-            question_text = str(row[1] or '').strip()
-            primary_skill = str(row[2] or '').strip()
-            sub_skill = str(row[3] or '').strip()
-            process_skill = str(row[4] or '').strip()
+            # Get main question text from column B (row 1)
+            main_question = str(row1[1] or '').strip() if len(row1) > 1 else ''
+            
+            # Get follow-up question from column C (row 2)
+            follow_up_question = ''
+            if i + 1 < len(values):
+                row2 = values[i + 1]
+                if len(row2) > 2:
+                    follow_up_question = str(row2[2] or '').strip()
+            
+            # Combine main question and follow-up question
+            question_text = main_question
+            if follow_up_question:
+                question_text += f"\n\n{follow_up_question}"
             
             questions.append({
                 'number': no,
                 'questionText': question_text,
-                'primary_skill': primary_skill,
-                'sub_skill': sub_skill,
-                'process_skill': process_skill
+                'mainQuestion': main_question,
+                'followUpQuestion': follow_up_question
             })
+            
+            # Move to next question pair (skip 2 rows)
+            i += 2
         
         return sorted(questions, key=lambda q: q['number'])
     
@@ -243,10 +314,10 @@ class SheetsService:
         
         # Add aggregated scores as JSON
         row.extend([
-            json.dumps(pm01_result.get('primary_scores', {}), ensure_ascii=False),
-            json.dumps(pm01_result.get('sub_scores', {}), ensure_ascii=False),
-            json.dumps(pm01_result.get('process_scores', {}), ensure_ascii=False),
-            json.dumps(pm01_result.get('aes_scores', {}), ensure_ascii=False)
+            json.dumps(pm01_result.get('scores_primary', {}), ensure_ascii=False),
+            json.dumps(pm01_result.get('scores_sub', {}), ensure_ascii=False),
+            json.dumps(pm01_result.get('process', {}), ensure_ascii=False),
+            json.dumps(pm01_result.get('aes', {}), ensure_ascii=False)
         ])
         
         sheet.append_row(row)
@@ -294,13 +365,16 @@ class SheetsService:
         return result
     
     def update_respondent_status(self, row_index: int, status: str):
-        """Updates the status column for a respondent row."""
+        """Updates the status column for a respondent row.
+        
+        Status is at column 19 (0-indexed), which is column 20 in gspread (1-indexed).
+        """
         self._require_config()
         sheet = self._get_sheet(self.config['respondentsSheet'])
         if not sheet:
             return
         
-        status_column = 23
+        status_column = 20  # Column 19 (0-indexed) = Column 20 (1-indexed in gspread)
         sheet.update_cell(row_index, status_column, status)
     
     def write_run_log(self, summary: Dict[str, Any]):

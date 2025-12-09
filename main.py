@@ -91,6 +91,7 @@ def main():
         # Read questions and metadata
         print("Reading questions and metadata...")
         questions = sheets.get_question_rows()
+        print("Questions : ", questions)
         
         # Initialize run tracking
         run_id = create_run_id()
@@ -106,38 +107,121 @@ def main():
             try:
                 print(f"\n[{idx}/{len(unprocessed)}] Processing: {respondent['id']} ({respondent['name']})")
                 
-                # Run PM01 (Primary Diagnosis)
-                pm01_result = run_pm01(
+                # STEP 1: PM01 Raw Scoring (Individual Q-A scoring)
+                print("  STEP 1: PM01 Raw Scoring...")
+                pm01_raw_results = run_pm01_raw(
                     respondent=respondent,
                     questions=questions,
                     config=config,
                     llm_service=llm_service,
-                    scoring_engine=scoring_engine,
                     sheets=sheets
                 )
                 
-                if not pm01_result:
+                if not pm01_raw_results:
                     total_errors += 1
-                    print(f"✗ PM01 failed for {respondent['id']}")
+                    print(f"✗ STEP 1 failed for {respondent['id']}")
                     continue
                 
-                # Run PM05 (Secondary Diagnosis)
-                pm05_result = run_pm05(
+                # STEP 2: PM05 Raw Scoring (Reverse logic)
+                print("  STEP 2: PM05 Raw Scoring...")
+                pm05_raw_results = run_pm05_raw(
                     respondent=respondent,
                     questions=questions,
-                    pm01_result=pm01_result,
+                    pm01_raw_results=pm01_raw_results,
+                    config=config,
+                    llm_service=llm_service,
+                    sheets=sheets
+                )
+                
+                if not pm05_raw_results:
+                    total_errors += 1
+                    print(f"✗ STEP 2 failed for {respondent['id']}")
+                    continue
+                
+                # STEP 3: PM01 Final (Aggregate PM01 raw scores + LLM analysis)
+                print("  STEP 3: PM01 Final (Aggregation + Analysis)...")
+                
+                # First, aggregate scores
+                aggregated_scores = scoring_engine.aggregate_pm01_raw_scores(
+                    pm01_raw_results=pm01_raw_results,
+                    questions=questions
+                )
+                
+                if not aggregated_scores:
+                    total_errors += 1
+                    print(f"✗ STEP 3 aggregation failed for {respondent['id']}")
+                    continue
+                
+                # Then, get LLM analysis
+                max_retries = config.get('maxRetries')
+                attempt = 0
+                pm01_final_analysis = None
+                
+                while attempt < max_retries:
+                    attempt += 1
+                    print(f"    PM01 Final Analysis Attempt {attempt}/{max_retries}...")
+                    
+                    try:
+                        pm01_final_analysis = llm_service.run_pm01_final_analysis(
+                            respondent=respondent,
+                            pm01_raw_results=pm01_raw_results,
+                            aggregated_scores=aggregated_scores,
+                            attempt=attempt
+                        )
+                        
+                        if pm01_final_analysis:
+                            print(f"    ✓ PM01 Final analysis completed")
+                            break
+                            
+                    except Exception as e:
+                        print(f"    Error in PM01 Final analysis attempt {attempt}: {e}")
+                        if attempt >= max_retries:
+                            sheets.log_error({
+                                'respondentId': respondent['id'],
+                                'category': 'PM01_FINAL_FAILED',
+                                'message': f'PM01 Final analysis failed after {max_retries} attempts',
+                                'attempt': max_retries,
+                                'timestamp': datetime.now(),
+                                'details': {'error': str(e)}
+                            })
+                
+                if not pm01_final_analysis:
+                    total_errors += 1
+                    print(f"✗ STEP 3 analysis failed for {respondent['id']}")
+                    continue
+                
+                # Combine aggregated scores with LLM analysis
+                pm01_final = scoring_engine.combine_pm01_final(
+                    aggregated_scores=aggregated_scores,
+                    pm01_final_analysis=pm01_final_analysis,
+                    pm01_raw_results=pm01_raw_results
+                )
+                
+                if not pm01_final:
+                    total_errors += 1
+                    print(f"✗ STEP 3 combination failed for {respondent['id']}")
+                    continue
+                
+                # STEP 4: PM05 Final (Consistency check)
+                print("  STEP 4: PM05 Final (Consistency Check)...")
+                pm05_final = run_pm05_final(
+                    respondent=respondent,
+                    pm01_final=pm01_final,
                     config=config,
                     llm_service=llm_service,
                     scoring_engine=scoring_engine,
                     sheets=sheets
                 )
                 
-                if pm05_result:
+                if pm05_final:
+                    # Write final results
+                    sheets.append_pm01_result(respondent, pm01_final)
+                    sheets.append_pm05_result(respondent, pm05_final)
                     total_processed += 1
-                    print(f"✓ Successfully processed {respondent['id']} (PM01 + PM05)")
+                    print(f"✓ Successfully processed {respondent['id']} (All steps completed)")
                 else:
                     total_errors += 1
-                    print(f"✗ PM05 failed for {respondent['id']}")
+                    print(f"✗ STEP 4 failed for {respondent['id']}")
                     
             except Exception as e:
                 total_errors += 1
@@ -178,118 +262,194 @@ def main():
         sys.exit(1)
 
 
-def run_pm01(
+def run_pm01_raw(
     respondent: Dict[str, Any],
     questions: list,
     config: Dict[str, Any],
     llm_service: LLMService,
-    scoring_engine: 'ScoringEngine',
     sheets: SheetsService
-) -> Dict[str, Any] | None:
+) -> Dict[str, Dict[str, Any]] | None:
     """
-    Run Primary Diagnosis (PM01).
+    STEP 1: PM01 Raw Scoring - Individual Q-A scoring.
     
-    Returns PM01 result dict or None if failed.
+    Returns dict mapping Q1-Q6 to their raw scoring results.
     """
     max_retries = config.get('maxRetries')
-    attempt = 0
+    all_question_results = {}
     
-    while attempt < max_retries:
-        attempt += 1
-        print(f"  PM01 Attempt {attempt}/{max_retries}...")
+    # Process each question individually
+    for i, question in enumerate(questions):
+        if question['number'] < 1 or question['number'] > 6:
+            continue
         
-        try:
-            # Get LLM evaluation
-            llm_response = llm_service.run_pm01_diagnosis(
-                respondent=respondent,
-                questions=questions,
-                attempt=attempt
-            )
+        question_id = f"Q{question['number']}"
+        print(f"    Processing {question_id}...")
+        
+        attempt = 0
+        question_result = None
+        
+        while attempt < max_retries:
+            attempt += 1
+            print(f"      {question_id} Attempt {attempt}/{max_retries}...")
             
-            if not llm_response:
-                continue
-            
-            # Apply scoring engine
-            pm01_result = scoring_engine.calculate_pm01_scores(
-                llm_response=llm_response,
-                questions=questions
-            )
-            
-            if pm01_result:
-                # Write PM01 result to sheet
-                sheets.append_pm01_result(respondent, pm01_result)
-                print(f"  ✓ PM01 completed")
-                return pm01_result
+            try:
+                # Get LLM evaluation for this single question
+                llm_response = llm_service.run_pm01_raw_scoring(
+                    respondent=respondent,
+                    question=question,
+                    question_index=i,
+                    attempt=attempt
+                )
                 
-        except Exception as e:
-            print(f"  Error in PM01 attempt {attempt}: {e}")
-            if attempt >= max_retries:
-                sheets.log_error({
-                    'respondentId': respondent['id'],
-                    'category': 'PM01_FAILED',
-                    'message': f'PM01 failed after {max_retries} attempts',
-                    'attempt': max_retries,
-                    'timestamp': datetime.now(),
-                    'details': {'error': str(e)}
-                })
-                return None
+                if llm_response:
+                    question_result = llm_response
+                    print(f"      ✓ {question_id} raw scoring completed")
+                    break
+                    
+            except Exception as e:
+                print(f"      Error in {question_id} attempt {attempt}: {e}")
+                if attempt >= max_retries:
+                    sheets.log_error({
+                        'respondentId': respondent['id'],
+                        'category': 'PM01_RAW_FAILED',
+                        'message': f'{question_id} raw scoring failed after {max_retries} attempts',
+                        'attempt': max_retries,
+                        'timestamp': datetime.now(),
+                        'details': {'error': str(e), 'question': question_id}
+                    })
+        
+        if not question_result:
+            print(f"    ✗ {question_id} raw scoring failed")
+            return None
+        
+        all_question_results[question_id] = question_result
     
-    return None
+    print(f"  ✓ STEP 1 completed (all Q-A raw scoring)")
+    return all_question_results
 
 
-def run_pm05(
+def run_pm05_raw(
     respondent: Dict[str, Any],
     questions: list,
-    pm01_result: Dict[str, Any],
+    pm01_raw_results: Dict[str, Dict[str, Any]],
+    config: Dict[str, Any],
+    llm_service: LLMService,
+    sheets: SheetsService
+) -> Dict[str, Dict[str, Any]] | None:
+    """
+    STEP 2: PM05 Raw Scoring - Reverse logic scoring using PM01 raw as reference.
+    
+    Returns dict mapping Q1-Q6 to their reverse-scored results.
+    """
+    max_retries = config.get('maxRetries')
+    all_question_results = {}
+    
+    # Process each question individually
+    for i, question in enumerate(questions):
+        if question['number'] < 1 or question['number'] > 6:
+            continue
+        
+        question_id = f"Q{question['number']}"
+        pm01_raw = pm01_raw_results.get(question_id)
+        
+        if not pm01_raw:
+            print(f"    ✗ {question_id} PM01 raw result not found")
+            return None
+        
+        print(f"    Processing {question_id} reverse scoring...")
+        
+        attempt = 0
+        question_result = None
+        
+        while attempt < max_retries:
+            attempt += 1
+            print(f"      {question_id} Attempt {attempt}/{max_retries}...")
+            
+            try:
+                # Get reverse logic evaluation for this single question
+                llm_response = llm_service.run_pm05_raw_scoring(
+                    respondent=respondent,
+                    question=question,
+                    question_index=i,
+                    pm01_raw_result=pm01_raw,
+                    attempt=attempt
+                )
+                
+                if llm_response:
+                    question_result = llm_response
+                    print(f"      ✓ {question_id} reverse scoring completed")
+                    break
+                    
+            except Exception as e:
+                print(f"      Error in {question_id} attempt {attempt}: {e}")
+                if attempt >= max_retries:
+                    sheets.log_error({
+                        'respondentId': respondent['id'],
+                        'category': 'PM05_RAW_FAILED',
+                        'message': f'{question_id} reverse scoring failed after {max_retries} attempts',
+                        'attempt': max_retries,
+                        'timestamp': datetime.now(),
+                        'details': {'error': str(e), 'question': question_id}
+                    })
+        
+        if not question_result:
+            print(f"    ✗ {question_id} reverse scoring failed")
+            return None
+        
+        all_question_results[question_id] = question_result
+    
+    print(f"  ✓ STEP 2 completed (all Q-A reverse scoring)")
+    return all_question_results
+
+
+def run_pm05_final(
+    respondent: Dict[str, Any],
+    pm01_final: Dict[str, Any],
     config: Dict[str, Any],
     llm_service: LLMService,
     scoring_engine: 'ScoringEngine',
     sheets: SheetsService
 ) -> Dict[str, Any] | None:
     """
-    Run Secondary Diagnosis (PM05) - Reverse scoring validation.
+    STEP 4: PM05 Final - Overall consistency check using PM01 Final.
     
-    Returns PM05 result dict or None if failed.
+    Returns PM05 final result dict or None if failed.
     """
     max_retries = config.get('maxRetries')
     attempt = 0
     
     while attempt < max_retries:
         attempt += 1
-        print(f"  PM05 Attempt {attempt}/{max_retries}...")
+        print(f"    PM05 Final Attempt {attempt}/{max_retries}...")
         
         try:
-            # Get reverse-scored LLM evaluation
-            llm_response = llm_service.run_pm05_validation(
+            # Get consistency check evaluation
+            llm_response = llm_service.run_pm05_final_check(
                 respondent=respondent,
-                questions=questions,
-                pm01_result=pm01_result,
+                pm01_final=pm01_final,
                 attempt=attempt
             )
             
             if not llm_response:
                 continue
             
-            # Calculate consistency and validation
-            pm05_result = scoring_engine.calculate_pm05_validation(
-                pm01_result=pm01_result,
+            # Process consistency check result
+            pm05_final_result = scoring_engine.process_pm05_final(
                 pm05_llm_response=llm_response,
-                questions=questions
+                pm01_final=pm01_final
             )
             
-            if pm05_result:
-                # Write PM05 result to sheet
-                sheets.append_pm05_result(respondent, pm05_result)
-                print(f"  ✓ PM05 completed")
-                return pm05_result
+            if pm05_final_result:
+                print(f"  ✓ STEP 4 completed (consistency check)")
+                return pm05_final_result
                 
         except Exception as e:
-            print(f"  Error in PM05 attempt {attempt}: {e}")
+            print(f"    Error in PM05 Final attempt {attempt}: {e}")
             if attempt >= max_retries:
                 sheets.log_error({
                     'respondentId': respondent['id'],
-                    'category': 'PM05_FAILED',
-                    'message': f'PM05 failed after {max_retries} attempts',
+                    'category': 'PM05_FINAL_FAILED',
+                    'message': f'PM05 Final failed after {max_retries} attempts',
                     'attempt': max_retries,
                     'timestamp': datetime.now(),
                     'details': {'error': str(e)}
@@ -297,6 +457,8 @@ def run_pm05(
                 return None
     
     return None
+
+
 
 
 if __name__ == '__main__':

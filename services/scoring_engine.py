@@ -2,8 +2,14 @@
 Scoring Engine - Implements weighted scoring, rules, and validation.
 """
 
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from core.utils import parse_number
+from core.category_mapper import (
+    map_to_official_category,
+    OFFICIAL_PRIMARY_CATEGORIES,
+    OFFICIAL_SUB_CATEGORIES,
+    OFFICIAL_PROCESS_ITEMS
+)
 
 
 class ScoringEngine:
@@ -14,51 +20,43 @@ class ScoringEngine:
     SUB_WEIGHT = 0.20      # 20%
     PROCESS_WEIGHT = 0.20  # 20%
     
-    # Question to category mapping (Q1-Q6)
-    QUESTION_CATEGORY_MAP = {
-        1: {
-            'primary': '問題理解',
-            'sub': '情報整理',
-            'process': 'clarity'
-        },
-        2: {
-            'primary': '論理構成',
-            'sub': '因果推論',
-            'process': 'structure'
-        },
-        3: {
-            'primary': '仮説構築',
-            'sub': '前提設定',
-            'process': 'hypothesis'
-        },
-        4: {
-            'primary': 'AI指示',
-            'sub': '要件定義力',
-            'process': 'prompt_clarity'
-        },
-        5: {
-            'primary': 'AI成果検証力',
-            'sub': '品質チェック力',
-            'process': 'quality_check'
-        },
-        6: {
-            'primary': '優先順位判断',
-            'sub': '意思決定',
-            'process': 'consistency'
-        }
-    }
+    # Official categories (imported from shared module)
+    OFFICIAL_PRIMARY_CATEGORIES = OFFICIAL_PRIMARY_CATEGORIES
+    OFFICIAL_SUB_CATEGORIES = OFFICIAL_SUB_CATEGORIES
+    OFFICIAL_PROCESS_ITEMS = OFFICIAL_PROCESS_ITEMS
     
     def __init__(self, config: Dict[str, Any]):
         """Initialize scoring engine with configuration."""
         self.config = config
     
-    def aggregate_pm01_raw_scores(
+    def _map_to_official_category(self, category: str, category_type: str) -> Optional[str]:
+        """Map question sheet category to official category (delegates to shared mapper)."""
+        return map_to_official_category(category, category_type)
+    
+    def _round_dict_values(self, data: Dict[str, Any], decimals: int = 1) -> Dict[str, Any]:
+        """
+        Round all float values in a dictionary to specified decimal places.
+        This prevents floating point precision issues like 1.7999999999999998.
+        """
+        result = {}
+        for key, value in data.items():
+            if isinstance(value, float):
+                result[key] = round(value, decimals)
+            elif isinstance(value, dict):
+                result[key] = self._round_dict_values(value, decimals)
+            else:
+                result[key] = value
+        return result
+    
+    def aggregate_pm05_raw_scores(
         self,
+        pm05_raw_results: Dict[str, Dict[str, Any]],
         pm01_raw_results: Dict[str, Dict[str, Any]],
         questions: List[Dict[str, Any]]
     ) -> Dict[str, Any] | None:
         """
-        Aggregate PM01 raw scores (without LLM analysis).
+        Aggregate PM05 Raw scores (validated scores from secondary diagnosis).
+        Uses PM05 Raw for primary/sub/process scores, PM01 Raw for AES scores.
         
         Returns aggregated scores:
         {
@@ -85,49 +83,57 @@ class ScoringEngine:
                     continue
                 
                 question_id = f"Q{q_num}"
-                q_data = pm01_raw_results.get(question_id, {})
+                # Use PM05 Raw results for validated scores
+                pm05_data = pm05_raw_results.get(question_id, {})
+                # Use PM01 Raw results for AES scores (PM05 validates but doesn't rescore AES)
+                pm01_data = pm01_raw_results.get(question_id, {})
                 
-                # Get category mapping for this question
-                category_map = self.QUESTION_CATEGORY_MAP.get(q_num, {})
-                primary_category = category_map.get('primary', '')
-                sub_category = category_map.get('sub', '')
-                process_item = category_map.get('process', '')
+                # Get category mapping for this question from the question data (required)
+                question_primary_category = question.get('primary_category', '')
+                question_sub_category = question.get('sub_category', '')
+                question_process_item = question.get('process_category', '')
                 
-                # Extract scores
-                primary = parse_number(q_data.get('primary_score', 0), 0)
-                sub = parse_number(q_data.get('sub_score', 0), 0)
-                process = parse_number(q_data.get('process_score', 0), 0)
+                # Map question sheet categories to official categories
+                primary_category = self._map_to_official_category(question_primary_category, 'primary')
+                sub_category = self._map_to_official_category(question_sub_category, 'sub')
+                process_item = self._map_to_official_category(question_process_item, 'process')
                 
-                # Extract increase/decrease points
-                increase_points = parse_number(q_data.get('increase_points', 0), 0)
-                decrease_points = parse_number(q_data.get('decrease_points', 0), 0)
+                # Skip if categories cannot be mapped to official categories
+                if not primary_category or not sub_category or not process_item:
+                    print(f"Warning: Cannot map categories for Q{q_num} to official categories. "
+                          f"Question categories: PRIMARY={question_primary_category}, SUB={question_sub_category}, PROCESS={question_process_item}. "
+                          f"Skipping aggregation for this question.")
+                    continue
                 
-                # Apply increase/decrease adjustments
-                primary_adjusted = max(0, min(5, primary + increase_points - decrease_points))
-                sub_adjusted = max(0, min(5, sub + increase_points - decrease_points))
-                process_adjusted = max(0, min(5, process + increase_points - decrease_points))
+                # Extract scores from PM05 Raw (validated scores)
+                primary = parse_number(pm05_data.get('primary_score', 0), 0)
+                sub = parse_number(pm05_data.get('sub_score', 0), 0)
+                process = parse_number(pm05_data.get('process_score', 0), 0)
                 
-                # Extract AES components (clarity, logic, relevance)
-                aes_clarity = parse_number(q_data.get('aes_clarity', 0), 0)
-                aes_logic = parse_number(q_data.get('aes_logic', 0), 0)
-                aes_relevance = parse_number(q_data.get('aes_relevance', 0), 0)
+                # Extract AES scores from PM01 Raw (PM05 validates but doesn't rescore AES)
+                aes_clarity = parse_number(pm01_data.get('aes_clarity', 0), 0)
+                aes_logic = parse_number(pm01_data.get('aes_logic', 0), 0)
+                aes_relevance = parse_number(pm01_data.get('aes_relevance', 0), 0)
+                
+                # Scores from PM05 Raw are already validated (include adjustments if mentioned in difference_note)
+                # Use scores directly without additional adjustments
+                primary_adjusted = max(1.0, min(5.0, primary))
+                sub_adjusted = max(1.0, min(5.0, sub))
+                process_adjusted = max(1.0, min(5.0, process))
                 
                 # Calculate AES score: (clarity + logic + relevance) / 3
                 aes_score = (aes_clarity + aes_logic + aes_relevance) / 3 if (aes_clarity + aes_logic + aes_relevance) > 0 else 0
                 
-                # Store per-question data
+                # Store per-question data (1 decimal place)
                 per_question[question_id] = {
-                    'primary_score': round(primary_adjusted, 2),
-                    'sub_score': round(sub_adjusted, 2),
-                    'process_score': round(process_adjusted, 2),
-                    'aes_score': round(aes_score, 2),
-                    'aes_clarity': aes_clarity,
-                    'aes_logic': aes_logic,
-                    'aes_relevance': aes_relevance,
-                    'increase_points': increase_points,
-                    'decrease_points': decrease_points,
-                    'evidence': q_data.get('evidence', ''),
-                    'judgment_reason': q_data.get('judgment_reason', '')
+                    'primary_score': round(primary_adjusted, 1),  # From PM05 Raw
+                    'sub_score': round(sub_adjusted, 1),  # From PM05 Raw
+                    'process_score': round(process_adjusted, 1),  # From PM05 Raw
+                    'aes_score': round(aes_score, 1),  # From PM01 Raw
+                    'aes_clarity': round(aes_clarity, 1),  # From PM01 Raw
+                    'aes_logic': round(aes_logic, 1),  # From PM01 Raw
+                    'aes_relevance': round(aes_relevance, 1),  # From PM01 Raw
+                    'difference_note': pm05_data.get('difference_note', '')  # From PM05 Raw
                 }
                 
                 # Use adjusted scores for aggregation
@@ -152,28 +158,47 @@ class ScoringEngine:
                     process_scores[process_item].append(process)
                 
                 # AES is per-question
-                aes_scores[question_id] = round(aes_score, 2)
+                aes_scores[question_id] = round(aes_score, 1)
             
             # Calculate averages for aggregated scores
-            primary_avg = {
-                skill: sum(scores) / len(scores) if scores else 0
-                for skill, scores in primary_scores.items()
-            }
-            sub_avg = {
-                skill: sum(scores) / len(scores) if scores else 0
-                for skill, scores in sub_scores.items()
-            }
-            process_avg = {
-                skill: sum(scores) / len(scores) if scores else 0
-                for skill, scores in process_scores.items()
-            }
+            # Ensure all official categories are included (even if empty)
+            # All averages must be rounded to 1 decimal place to avoid floating point precision issues
+            primary_avg = {}
+            for category in self.OFFICIAL_PRIMARY_CATEGORIES:
+                if category in primary_scores and primary_scores[category]:
+                    avg = sum(primary_scores[category]) / len(primary_scores[category])
+                    primary_avg[category] = round(avg, 1)
+                else:
+                    primary_avg[category] = 0.0
+            
+            sub_avg = {}
+            for category in self.OFFICIAL_SUB_CATEGORIES:
+                if category in sub_scores and sub_scores[category]:
+                    avg = sum(sub_scores[category]) / len(sub_scores[category])
+                    sub_avg[category] = round(avg, 1)
+                else:
+                    sub_avg[category] = 0.0
+            
+            process_avg = {}
+            for item in self.OFFICIAL_PROCESS_ITEMS:
+                if item in process_scores and process_scores[item]:
+                    avg = sum(process_scores[item]) / len(process_scores[item])
+                    process_avg[item] = round(avg, 1)
+                else:
+                    process_avg[item] = 0.0
             
             # Calculate weighted total score
-            # Average all primary scores
-            avg_primary = sum(primary_avg.values()) / len(primary_avg) if primary_avg else 0
-            avg_sub = sum(sub_avg.values()) / len(sub_avg) if sub_avg else 0
-            avg_process = sum(process_avg.values()) / len(process_avg) if process_avg else 0
-            avg_aes = sum(aes_scores.values()) / len(aes_scores) if aes_scores else 0
+            # Average all primary scores (already rounded to 1 decimal)
+            avg_primary = sum(primary_avg.values()) / len(primary_avg) if primary_avg else 0.0
+            avg_sub = sum(sub_avg.values()) / len(sub_avg) if sub_avg else 0.0
+            avg_process = sum(process_avg.values()) / len(process_avg) if process_avg else 0.0
+            avg_aes = sum(aes_scores.values()) / len(aes_scores) if aes_scores else 0.0
+            
+            # Round intermediate averages to 1 decimal place
+            avg_primary = round(avg_primary, 1)
+            avg_sub = round(avg_sub, 1)
+            avg_process = round(avg_process, 1)
+            avg_aes = round(avg_aes, 1)
             
             # Weighted total: PRIMARY 60% + SUB 20% + PROCESS 20%
             # AES is not included in total score (used as supplementary indicator)
@@ -183,14 +208,17 @@ class ScoringEngine:
                 avg_process * self.PROCESS_WEIGHT
             )
             
-            return {
-                'scores_primary': primary_avg,
-                'scores_sub': sub_avg,
-                'process': process_avg,
-                'aes': aes_scores,
-                'total_score': round(weighted_total, 2),
-                'per_question': per_question
+            # Round all dictionary values to ensure no floating point precision issues
+            result = {
+                'scores_primary': self._round_dict_values(primary_avg, 1),
+                'scores_sub': self._round_dict_values(sub_avg, 1),
+                'process': self._round_dict_values(process_avg, 1),
+                'aes': self._round_dict_values(aes_scores, 1),
+                'total_score': round(weighted_total, 1),
+                'per_question': self._round_dict_values(per_question, 1)
             }
+            
+            return result
             
         except Exception as e:
             print(f"Error aggregating PM01 raw scores: {e}")
@@ -200,7 +228,7 @@ class ScoringEngine:
         self,
         aggregated_scores: Dict[str, Any],
         pm01_final_analysis: Dict[str, Any],
-        pm01_raw_results: Dict[str, Dict[str, Any]]
+        pm05_raw_results: Dict[str, Dict[str, Any]]
     ) -> Dict[str, Any] | None:
         """
         STEP 3: Combine aggregated scores with LLM analysis.
@@ -213,8 +241,6 @@ class ScoringEngine:
             "aes": {...},
             "total_score": <float>,
             "per_question": {...},
-            "top_strengths": [...],
-            "top_weaknesses": [...],
             "overall_summary": "<string>",
             "ai_use_level": "<string>",
             "recommendations": [...],
@@ -223,26 +249,29 @@ class ScoringEngine:
         """
         try:
             # Use LLM analysis for insights
-            top_strengths = pm01_final_analysis.get('top_strengths', [])
-            top_weaknesses = pm01_final_analysis.get('top_weaknesses', [])
             overall_summary = pm01_final_analysis.get('overall_summary', '')
             ai_use_level = pm01_final_analysis.get('ai_use_level', '標準')
             recommendations = pm01_final_analysis.get('recommendations', [])
             
             # Combine aggregated scores with LLM analysis
+            # Ensure all scores are properly rounded (double-check to prevent any precision issues)
+            scores_primary = aggregated_scores.get('scores_primary', {})
+            scores_sub = aggregated_scores.get('scores_sub', {})
+            process_scores = aggregated_scores.get('process', {})
+            aes_scores = aggregated_scores.get('aes', {})
+            per_question = aggregated_scores.get('per_question', {})
+            
             return {
-                'scores_primary': aggregated_scores.get('scores_primary', {}),
-                'scores_sub': aggregated_scores.get('scores_sub', {}),
-                'process': aggregated_scores.get('process', {}),
-                'aes': aggregated_scores.get('aes', {}),
-                'total_score': aggregated_scores.get('total_score', 0),
-                'per_question': aggregated_scores.get('per_question', {}),
-                'top_strengths': top_strengths,
-                'top_weaknesses': top_weaknesses,
+                'scores_primary': self._round_dict_values(scores_primary, 1),
+                'scores_sub': self._round_dict_values(scores_sub, 1),
+                'process': self._round_dict_values(process_scores, 1),
+                'aes': self._round_dict_values(aes_scores, 1),
+                'total_score': round(aggregated_scores.get('total_score', 0), 1),
+                'per_question': self._round_dict_values(per_question, 1),
                 'overall_summary': overall_summary,
                 'ai_use_level': ai_use_level,
                 'recommendations': recommendations,
-                'debug_raw': pm01_raw_results  # Store raw results for debugging
+                'debug_raw': pm05_raw_results  # Store PM05 Raw results for debugging
             }
             
         except Exception as e:
@@ -259,23 +288,46 @@ class ScoringEngine:
         
         Returns PM05 Final result:
         {
-            "status": "valid|caution|re-evaluate",
-            "consistency_score": <1-5>,
-            "issues": [...],
-            "summary": "<string>"
+            "status": "妥当|注意|再評価",
+            "consistency_score": <0.0-1.0>,
+            "detected_issues": [...],
+            "comment": "<string 80-120 chars in Japanese>"
         }
         """
         try:
             consistency_score = pm05_llm_response.get('consistency_score', 0)
-            status = pm05_llm_response.get('status', 'caution')
-            issues = pm05_llm_response.get('issues', [])
-            summary = pm05_llm_response.get('summary', '')
+            # Validate consistency_score range (0.0-1.0)
+            if consistency_score < 0.0 or consistency_score > 1.0:
+                print(f"Warning: consistency_score out of range: {consistency_score}, clamping to 0.0-1.0")
+                consistency_score = max(0.0, min(1.0, consistency_score))
+            
+            status = pm05_llm_response.get('status', '注意')
+            # Ensure status is in Japanese
+            status_map = {
+                'valid': '妥当',
+                'caution': '注意',
+                're-evaluate': '再評価',
+                'reevaluate': '再評価'
+            }
+            status_lower = status.lower()
+            if status_lower in status_map:
+                status = status_map[status_lower]
+            elif status not in ['妥当', '注意', '再評価']:
+                status = '注意'  # Default to 注意 if invalid
+            
+            # Accept both 'detected_issues' and 'issues' for backward compatibility
+            detected_issues = pm05_llm_response.get('detected_issues', pm05_llm_response.get('issues', []))
+            if not isinstance(detected_issues, list):
+                detected_issues = []
+            
+            # Accept both 'comment' and 'summary' for backward compatibility
+            comment = pm05_llm_response.get('comment', pm05_llm_response.get('summary', ''))
             
             return {
                 'status': status,
-                'consistency_score': round(consistency_score, 2),
-                'issues': issues,
-                'summary': summary
+                'consistency_score': round(consistency_score, 2),  # 2 decimal places for 0-1 range
+                'detected_issues': detected_issues,
+                'comment': comment
             }
         except Exception as e:
             print(f"Error processing PM05 Final: {e}")
@@ -416,7 +468,7 @@ class ScoringEngine:
             
             return {
                 'status': status,
-                'consistency_score': round(avg_consistency, 2),
+                'consistency_score': round(avg_consistency, 1),
                 'issues': issues,
                 'comment': comment,
                 'raw_pm05_response': pm05_llm_response

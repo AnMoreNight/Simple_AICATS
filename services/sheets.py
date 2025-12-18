@@ -9,6 +9,7 @@ from google.oauth2.service_account import Credentials
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 import os
+import re
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -121,9 +122,19 @@ class SheetsService:
             given_name = str(row[3] or '').strip()
             name = f"{family_name} {given_name}".strip() if family_name and given_name else (family_name or given_name or '').strip()
             
+            # Column 4: 所属部門（部署）名 (Department Name)
+            department = str(row[4] or '').strip() if len(row) > 4 else ''
+            
+            # Column 5: 会社名（法人名） (Company Name)
+            company_name = str(row[5] or '').strip() if len(row) > 5 else ''
+            
             # Q1-Q6 answers are at columns 7, 9, 11, 13, 15, 17
             answer_columns = [7, 9, 11, 13, 15, 17]
             answers = [self._sanitize_answer(str(row[col] or '')) for col in answer_columns]
+            
+            # Q1-Q6 reasons are at columns 8, 10, 12, 14, 16, 18
+            reason_columns = [8, 10, 12, 14, 16, 18]
+            reasons = [self._sanitize_answer(str(row[col] or '')) for col in reason_columns]
             
             # Column 19: Status
             status = str(row[19] or '').strip() if len(row) > 19 else ''
@@ -131,7 +142,10 @@ class SheetsService:
             rows.append({
                 'id': respondent_id,
                 'name': name,
+                'department': department,
+                'company_name': company_name,
                 'answers': answers,
+                'reasons': reasons,
                 'rowIndex': i,
                 'status': status
             })
@@ -143,81 +157,153 @@ class SheetsService:
         """Reads question rows from the question sheet.
         
         Expected format:
-        - Column A: Question ID (Q1, Q2, Q3, Q4, Q5, Q6)
-        - Column B: Main question text (multiple choice)
-        - Column C: Follow-up question text
-        Each question spans 2 rows:
-          Row 1: A=Q1, B=main question
-          Row 2: C=follow-up question
+        - Row 1 (Header): A1=Q1, B1=Q2, C1=Q3, D1=Q4, E1=Q5, F1=Q6
+        - Row 2 (Main questions): A2=Q1_main, B2=Q2_main, C2=Q3_main, ...
+        - Row 3 (Follow-up questions): A3=Q1_followup, B3=Q2_followup, C3=Q3_followup, ...
+        - Row 4 (Categories): A4="PRIMARY: X, SUB: Y, PROCESS: Z" or separate columns G, H, I
         """
         self._require_config()
         sheet = self._get_sheet(self.config['questionSheet'])
         if not sheet:
+            print(f"getQuestionRows: Sheet '{self.config['questionSheet']}' not found")
             return []
         
         values = sheet.get_all_values()
+        if not values:
+            print(f"getQuestionRows: Sheet '{self.config['questionSheet']}' is empty")
+            return []
+        
+        print(f"getQuestionRows: Found {len(values)} rows in sheet")
+        
+        # Check if we have at least header row
+        if len(values) < 1:
+            print("getQuestionRows: No rows found")
+            return []
+        
+        # Row 1 is header: A1=Q1, B1=Q2, C1=Q3, D1=Q4, E1=Q5, F1=Q6
+        header_row = values[0]
         questions = []
         
-        # Process rows in pairs (each question has 2 rows)
-        i = 0
-        while i < len(values):
-            # Skip header row
-            if i == 0:
-                i += 1
-                continue
+        # Check if categories are in separate columns (G, H, I) or in row 4
+        # Look for PRIMARY, SUB, PROCESS headers in row 1
+        has_separate_category_columns = False
+        primary_col_idx = None
+        sub_col_idx = None
+        process_col_idx = None
+        
+        if len(header_row) > 6:
+            for idx, header in enumerate(header_row):
+                header_upper = str(header or '').strip().upper()
+                if header_upper == 'PRIMARY':
+                    primary_col_idx = idx
+                elif header_upper == 'SUB':
+                    sub_col_idx = idx
+                elif header_upper == 'PROCESS':
+                    process_col_idx = idx
             
-            # Get first row of question pair
-            if i >= len(values):
-                break
-            
-            row1 = values[i]
-            if len(row1) < 1:
-                i += 1
-                continue
-            
-            # Extract question ID from column A (e.g., "Q1")
-            question_id = str(row1[0] or '').strip().upper()
+            if primary_col_idx is not None and sub_col_idx is not None and process_col_idx is not None:
+                has_separate_category_columns = True
+                print(f"getQuestionRows: Found separate category columns: PRIMARY={primary_col_idx+1}, SUB={sub_col_idx+1}, PROCESS={process_col_idx+1}")
+        
+        # Process each column (Q1-Q6)
+        for col_idx in range(min(6, len(header_row))):
+            # Extract question ID from header (e.g., "Q1")
+            question_id = str(header_row[col_idx] or '').strip().upper()
             if not question_id.startswith('Q'):
-                i += 1
+                print(f"getQuestionRows: Column {col_idx+1} header doesn't start with Q: '{question_id}'")
                 continue
             
             try:
                 # Extract number from Q1, Q2, etc.
                 no = int(question_id[1:])
             except (ValueError, TypeError):
-                i += 1
+                print(f"getQuestionRows: Column {col_idx+1} invalid question number: '{question_id}'")
                 continue
             
             # Only process questions 1-6
             if no < 1 or no > self.DIAGNOSIS_QUESTION_COUNT:
-                i += 1
+                print(f"getQuestionRows: Column {col_idx+1} question number out of range: {no}")
                 continue
             
-            # Get main question text from column B (row 1)
-            main_question = str(row1[1] or '').strip() if len(row1) > 1 else ''
+            # Get main question from row 2 (index 1), column col_idx
+            main_question = ''
+            if len(values) > 1 and len(values[1]) > col_idx:
+                main_question = str(values[1][col_idx] or '').strip()
             
-            # Get follow-up question from column C (row 2)
+            # Get follow-up question from row 3 (index 2), column col_idx
             follow_up_question = ''
-            if i + 1 < len(values):
-                row2 = values[i + 1]
-                if len(row2) > 2:
-                    follow_up_question = str(row2[2] or '').strip()
+            if len(values) > 2 and len(values[2]) > col_idx:
+                follow_up_question = str(values[2][col_idx] or '').strip()
             
             # Combine main question and follow-up question
             question_text = main_question
             if follow_up_question:
                 question_text += f"\n\n{follow_up_question}"
             
-            questions.append({
-                'number': no,
-                'questionText': question_text,
-                'mainQuestion': main_question,
-                'followUpQuestion': follow_up_question
-            })
+            # Extract categories
+            primary_category = ''
+            sub_category = ''
+            process_category = ''
             
-            # Move to next question pair (skip 2 rows)
-            i += 2
+            if has_separate_category_columns:
+                # Read from separate columns (G, H, I) - categories aligned with Q1-Q6
+                # Row 2 has PRIMARY categories aligned with Q1-Q6 (col_idx maps to question)
+                # Row 3 has SUB categories aligned with Q1-Q6
+                # Row 4 has PROCESS categories aligned with Q1-Q6
+                # But wait, if PRIMARY/SUB/PROCESS are headers in row 1, then:
+                # Row 2, column G (primary_col_idx) = PRIMARY category for Q1
+                # Row 2, column H (sub_col_idx) = SUB category for Q1
+                # Row 2, column I (process_col_idx) = PROCESS category for Q1
+                # Actually, this doesn't align well. Let's assume:
+                # If separate columns exist, they're in columns G, H, I
+                # And we need to read from the row that corresponds to this question
+                # For now, let's read from row 2 (index 1) for all categories
+                # This assumes categories are in row 2, columns G, H, I
+                if len(values) > 1:
+                    if primary_col_idx is not None and len(values[1]) > primary_col_idx:
+                        primary_category = str(values[1][primary_col_idx] or '').strip()
+                    if sub_col_idx is not None and len(values[1]) > sub_col_idx:
+                        sub_category = str(values[1][sub_col_idx] or '').strip()
+                    if process_col_idx is not None and len(values[1]) > process_col_idx:
+                        process_category = str(values[1][process_col_idx] or '').strip()
+            else:
+                # Try to read from row 4 (index 3) in the same column as the question
+                if len(values) > 3 and len(values[3]) > col_idx:
+                    category_text = str(values[3][col_idx] or '').strip()
+                    # Parse format: "PRIMARY: 問題理解, SUB: 情報整理, PROCESS: clarity"
+                    if category_text:
+                        # Try to parse the format
+                        primary_match = re.search(r'PRIMARY:\s*([^,]+)', category_text, re.IGNORECASE)
+                        sub_match = re.search(r'SUB:\s*([^,]+)', category_text, re.IGNORECASE)
+                        process_match = re.search(r'PROCESS:\s*([^,]+)', category_text, re.IGNORECASE)
+                        
+                        if primary_match:
+                            primary_category = primary_match.group(1).strip()
+                        if sub_match:
+                            sub_category = sub_match.group(1).strip()
+                        if process_match:
+                            process_category = process_match.group(1).strip()
+            
+            question_data = {
+                'number': no,
+                'questionText': question_text
+            }
+            
+            # Add categories if found
+            if primary_category:
+                question_data['primary_category'] = primary_category
+            if sub_category:
+                question_data['sub_category'] = sub_category
+            if process_category:
+                question_data['process_category'] = process_category
+            
+            questions.append(question_data)
+            
+            print(f"getQuestionRows: Added Q{no} from column {col_idx+1}")
+            if primary_category or sub_category or process_category:
+                print(f"  Categories: PRIMARY={primary_category}, SUB={sub_category}, PROCESS={process_category}")
         
+        print(f"getQuestionRows: Read {len(questions)} questions")
         return sorted(questions, key=lambda q: q['number'])
     
     def _sanitize_answer(self, answer: str) -> str:
@@ -237,7 +323,16 @@ class SheetsService:
                 rows=1000,
                 cols=10
             )
-            sheet.append_row(['Timestamp', 'RowIndex', 'RespondentId', 'Reason'])
+        
+        # Ensure headers exist
+        headers = ['Timestamp', 'RowIndex', 'RespondentId', 'Reason']
+        existing_values = sheet.get_all_values()
+        if len(existing_values) == 0:
+            # Sheet is empty, add headers
+            sheet.append_row(headers)
+        elif existing_values[0] != headers:
+            # First row doesn't match headers, insert headers at the top
+            sheet.insert_row(headers, index=1)
         
         rows = []
         for error in errors:
@@ -264,7 +359,16 @@ class SheetsService:
                 rows=1000,
                 cols=10
             )
-            sheet.append_row(['Timestamp', 'RespondentId', 'Category', 'Message', 'Details', 'Attempt'])
+        
+        # Ensure headers exist
+        headers = ['Timestamp', 'RespondentId', 'Category', 'Message', 'Details', 'Attempt']
+        existing_values = sheet.get_all_values()
+        if len(existing_values) == 0:
+            # Sheet is empty, add headers
+            sheet.append_row(headers)
+        elif existing_values[0] != headers:
+            # First row doesn't match headers, insert headers at the top
+            sheet.insert_row(headers, index=1)
         
         details_json = json.dumps(error.get('details') or {})
         
@@ -276,93 +380,6 @@ class SheetsService:
             details_json,
             error.get('attempt', 1)
         ])
-    
-    def append_pm01_result(self, respondent: Dict[str, Any], pm01_result: Dict[str, Any]):
-        """Writes PM01 result to PM01 sheet."""
-        if not self._spreadsheet:
-            return
-        
-        sheet = self._get_sheet('PM01')
-        if not sheet:
-            sheet = self._spreadsheet.add_worksheet(title='PM01', rows=1000, cols=50)
-            # Create headers
-            headers = ['Respondent_ID', 'Timestamp', 'Total_Score']
-            for i in range(1, 7):
-                headers.extend([f'Q{i}_Primary', f'Q{i}_Sub', f'Q{i}_Process', f'Q{i}_AES', f'Q{i}_Comment'])
-            headers.extend(['Primary_Scores_JSON', 'Sub_Scores_JSON', 'Process_Scores_JSON', 'AES_Scores_JSON'])
-            sheet.append_row(headers)
-        
-        # Build row
-        row = [
-            respondent['id'],
-            self._format_date(datetime.now()),
-            pm01_result.get('total_score', 0)
-        ]
-        
-        # Add per-question scores
-        per_question = pm01_result.get('per_question', {})
-        for i in range(1, 7):
-            q_id = f"Q{i}"
-            q_data = per_question.get(q_id, {})
-            row.extend([
-                q_data.get('primary_score', 0),
-                q_data.get('sub_score', 0),
-                q_data.get('process_score', 0),
-                q_data.get('aes_score', 0),
-                q_data.get('comment', '')
-            ])
-        
-        # Add aggregated scores as JSON
-        row.extend([
-            json.dumps(pm01_result.get('scores_primary', {}), ensure_ascii=False),
-            json.dumps(pm01_result.get('scores_sub', {}), ensure_ascii=False),
-            json.dumps(pm01_result.get('process', {}), ensure_ascii=False),
-            json.dumps(pm01_result.get('aes', {}), ensure_ascii=False)
-        ])
-        
-        sheet.append_row(row)
-    
-    def append_pm05_result(self, respondent: Dict[str, Any], pm05_result: Dict[str, Any]):
-        """Writes PM05 result to PM05 sheet."""
-        if not self._spreadsheet:
-            return
-        
-        sheet = self._get_sheet('PM05')
-        if not sheet:
-            sheet = self._spreadsheet.add_worksheet(title='PM05', rows=1000, cols=20)
-            sheet.append_row([
-                'Respondent_ID', 'Timestamp', 'Status', 'Consistency_Score',
-                'Issues_JSON', 'Comment'
-            ])
-        
-        sheet.append_row([
-            respondent['id'],
-            self._format_date(datetime.now()),
-            pm05_result.get('status', ''),
-            pm05_result.get('consistency_score', 0),
-            json.dumps(pm05_result.get('issues', []), ensure_ascii=False),
-            pm05_result.get('comment', '')
-        ])
-    
-    def read_pm01_rows(self) -> List[Dict[str, Any]]:
-        """Reads PM01 results from sheet."""
-        sheet = self._get_sheet('PM01')
-        if not sheet:
-            return []
-        
-        values = sheet.get_all_values()
-        if len(values) <= 1:
-            return []
-        
-        result = []
-        for row in values[1:]:
-            if len(row) < 1:
-                continue
-            result.append({
-                'respondentId': str(row[0] or '').strip()
-            })
-        
-        return result
     
     def update_respondent_status(self, row_index: int, status: str):
         """Updates the status column for a respondent row.
@@ -385,7 +402,16 @@ class SheetsService:
         sheet = self._get_sheet('RunLog')
         if not sheet:
             sheet = self._spreadsheet.add_worksheet(title='RunLog', rows=1000, cols=10)
-            sheet.append_row(['Timestamp', 'RunId', 'Processed', 'Errors', 'Duration'])
+        
+        # Ensure headers exist
+        headers = ['Timestamp', 'RunId', 'Processed', 'Errors', 'Duration']
+        existing_values = sheet.get_all_values()
+        if len(existing_values) == 0:
+            # Sheet is empty, add headers
+            sheet.append_row(headers)
+        elif existing_values[0] != headers:
+            # First row doesn't match headers, insert headers at the top
+            sheet.insert_row(headers, index=1)
         
         duration_ms = summary['durationMs']
         total_seconds = duration_ms // 1000
@@ -404,3 +430,248 @@ class SheetsService:
     def _format_date(self, date: datetime) -> str:
         """Formats a date for display."""
         return date.strftime('%Y-%m-%d %H:%M:%S')
+    
+    def write_pm1raw_results(self, respondent: Dict[str, Any], pm01_raw_results: Dict[str, Dict[str, Any]]):
+        """Writes PM01 Raw Scoring results to PM1Raw sheet (one row per question)."""
+        if not self._spreadsheet or not pm01_raw_results:
+            return
+        
+        sheet = self._get_sheet('PM1Raw')
+        if not sheet:
+            sheet = self._spreadsheet.add_worksheet(title='PM1Raw', rows=1000, cols=13)
+        
+        # Ensure headers exist
+        headers = [
+            'Respondent_ID', 'Timestamp', 'Question', 'Primary_Score', 'Sub_Score', 
+            'Process_Score', 'AES_Clarity', 'AES_Logic', 'AES_Relevance', 
+            'Evidence', 'Judgment_Reason'
+        ]
+        existing_values = sheet.get_all_values()
+        if len(existing_values) == 0:
+            # Sheet is empty, add headers
+            sheet.append_row(headers)
+        elif existing_values[0] != headers:
+            # First row doesn't match headers, insert headers at the top
+            # This will shift existing rows down
+            sheet.insert_row(headers, index=1)
+        
+        timestamp = self._format_date(datetime.now())
+        rows = []
+        
+        # Write one row per question (Q1-Q6)
+        for question_id in sorted(pm01_raw_results.keys()):
+            q_data = pm01_raw_results[question_id]
+            rows.append([
+                respondent['id'],
+                timestamp,
+                question_id,
+                q_data.get('primary_score', 0),
+                q_data.get('sub_score', 0),
+                q_data.get('process_score', 0),
+                q_data.get('aes_clarity', 0),
+                q_data.get('aes_logic', 0),
+                q_data.get('aes_relevance', 0),
+                q_data.get('evidence', ''),
+                q_data.get('judgment_reason', '')
+            ])
+        
+        if rows:
+            sheet.append_rows(rows)
+    
+    def write_pm5raw_results(self, respondent: Dict[str, Any], pm05_raw_results: Dict[str, Dict[str, Any]]):
+        """Writes PM05 Raw Scoring results to PM5Raw sheet (one row per question)."""
+        if not self._spreadsheet or not pm05_raw_results:
+            return
+        
+        sheet = self._get_sheet('PM5Raw')
+        if not sheet:
+            sheet = self._spreadsheet.add_worksheet(title='PM5Raw', rows=1000, cols=10)
+        
+        # Ensure headers exist
+        headers = [
+            'Respondent_ID', 'Timestamp', 'Question', 'Primary_Score', 'Sub_Score', 
+            'Process_Score', 'Difference_Note'
+        ]
+        existing_values = sheet.get_all_values()
+        if len(existing_values) == 0:
+            # Sheet is empty, add headers
+            sheet.append_row(headers)
+        elif existing_values[0] != headers:
+            # First row doesn't match headers, insert headers at the top
+            # This will shift existing rows down
+            sheet.insert_row(headers, index=1)
+        
+        timestamp = self._format_date(datetime.now())
+        rows = []
+        
+        # Write one row per question (Q1-Q6)
+        for question_id in sorted(pm05_raw_results.keys()):
+            q_data = pm05_raw_results[question_id]
+            rows.append([
+                respondent['id'],
+                timestamp,
+                question_id,
+                q_data.get('primary_score', 0),
+                q_data.get('sub_score', 0),
+                q_data.get('process_score', 0),
+                q_data.get('difference_note', '')
+            ])
+        
+        if rows:
+            sheet.append_rows(rows)
+    
+    def write_pm1final_results(self, respondent: Dict[str, Any], pm01_final: Dict[str, Any]):
+        """Writes PM01 Final results to PM1Final sheet (one row per respondent)."""
+        if not self._spreadsheet or not pm01_final:
+            return
+        
+        sheet = self._get_sheet('PM1Final')
+        if not sheet:
+            sheet = self._spreadsheet.add_worksheet(title='PM1Final', rows=1000, cols=15)
+        
+        # Ensure headers exist (aggregated results only, no per-question details)
+        headers = [
+            'Respondent_ID', 'Company_Name', 'Timestamp', 'Total_Score', 
+            'Scores_Primary_JSON', 'Scores_Sub_JSON', 'Process_JSON', 'AES_JSON',
+            'Overall_Summary', 'AI_Use_Level', 'Recommendations_JSON'
+        ]
+        existing_values = sheet.get_all_values()
+        if len(existing_values) == 0:
+            # Sheet is empty, add headers
+            sheet.append_row(headers)
+        elif existing_values[0] != headers:
+            # First row doesn't match headers, insert headers at the top
+            # This will shift existing rows down
+            sheet.insert_row(headers, index=1)
+        
+        timestamp = self._format_date(datetime.now())
+        
+        # Build row with aggregated results only
+        row = [
+            respondent['id'],
+            respondent.get('company_name', ''),
+            timestamp,
+            pm01_final.get('total_score', 0),
+            json.dumps(pm01_final.get('scores_primary', {}), ensure_ascii=False),
+            json.dumps(pm01_final.get('scores_sub', {}), ensure_ascii=False),
+            json.dumps(pm01_final.get('process', {}), ensure_ascii=False),
+            json.dumps(pm01_final.get('aes', {}), ensure_ascii=False),
+            pm01_final.get('overall_summary', ''),
+            pm01_final.get('ai_use_level', ''),
+            json.dumps(pm01_final.get('recommendations', []), ensure_ascii=False)
+        ]
+        
+        sheet.append_row(row)
+    
+    def write_report_url(
+        self,
+        respondent_id: str,
+        hash_id: str,
+        filepath: str,
+        report_url: str,
+        timestamp: str,
+        report_type: str = 'individual',
+        company_name: Optional[str] = None,
+        department: Optional[str] = None
+    ):
+        """
+        Writes report URL mapping to reportIndSheet or reportOrgSheet (configured in Config sheet).
+        Uses different column structures for individual vs organization reports.
+        
+        Args:
+            respondent_id: Respondent ID (for individual) or company name (for organization)
+            hash_id: Hash ID for the report
+            filepath: File path of the report
+            report_url: Full URL of the report
+            timestamp: Timestamp string
+            report_type: 'individual' or 'organization' (default: 'individual')
+            company_name: Company name (for organization reports, optional)
+            department: Department name (for organization reports, optional)
+        """
+        if not self._spreadsheet:
+            return
+        
+        # Get sheet name from config based on report type
+        if report_type == 'organization':
+            sheet_name = self.config.get('reportOrgSheet', 'ReportOrganization') if self.config else 'ReportOrganization'
+        else:
+            sheet_name = self.config.get('reportIndSheet', 'ReportIndividual') if self.config else 'ReportIndividual'
+        
+        sheet = self._get_sheet(sheet_name)
+        if not sheet:
+            # Create sheet with appropriate number of columns
+            num_cols = 7 if report_type == 'organization' else 6
+            sheet = self._spreadsheet.add_worksheet(title=sheet_name, rows=1000, cols=num_cols)
+        
+        # Define headers based on report type
+        if report_type == 'organization':
+            headers = [
+                'Hash_ID', 'Company_Name', 'Department', 'Report_URL', 'Filepath', 'Timestamp', 'Created_At'
+            ]
+        else:
+            headers = [
+                'Hash_ID', 'Respondent_ID', 'Report_URL', 'Filepath', 'Timestamp', 'Created_At'
+            ]
+        
+        # Ensure headers exist
+        existing_values = sheet.get_all_values()
+        if len(existing_values) == 0:
+            sheet.append_row(headers)
+        elif existing_values[0] != headers:
+            sheet.insert_row(headers, index=1)
+        
+        created_at = self._format_date(datetime.now())
+        
+        # Build row based on report type
+        if report_type == 'organization':
+            row = [
+                hash_id,
+                company_name or respondent_id,
+                department or '',
+                report_url,
+                filepath,
+                timestamp,
+                created_at
+            ]
+        else:
+            row = [
+                hash_id,
+                respondent_id,
+                report_url,
+                filepath,
+                timestamp,
+                created_at
+            ]
+        
+        sheet.append_row(row)
+    
+    def write_pm5final_results(self, respondent: Dict[str, Any], pm05_final: Dict[str, Any]):
+        """Writes PM05 Final results to PM5Final sheet (one row per respondent)."""
+        if not self._spreadsheet or not pm05_final:
+            return
+        
+        sheet = self._get_sheet('PM5Final')
+        if not sheet:
+            sheet = self._spreadsheet.add_worksheet(title='PM5Final', rows=1000, cols=10)
+        
+        # Ensure headers exist
+        headers = [
+            'Respondent_ID', 'Timestamp', 'Status', 'Consistency_Score', 
+            'Detected_Issues_JSON', 'Comment'
+        ]
+        existing_values = sheet.get_all_values()
+        if len(existing_values) == 0:
+            # Sheet is empty, add headers
+            sheet.append_row(headers)
+        elif existing_values[0] != headers:
+            # First row doesn't match headers, insert headers at the top
+            sheet.insert_row(headers, index=1)
+        
+        sheet.append_row([
+            respondent['id'],
+            self._format_date(datetime.now()),
+            pm05_final.get('status', ''),
+            pm05_final.get('consistency_score', 0),
+            json.dumps(pm05_final.get('detected_issues', []), ensure_ascii=False),
+            pm05_final.get('comment', '')
+        ])

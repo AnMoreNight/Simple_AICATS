@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI-CATS 簡易診断レポート</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
+            font-size: 17px;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #4A90E2 0%, #2980b9 100%);
+            padding: 20px;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        /* Phone Frame */
+        .phone-wrapper {
+            max-width: 414px;
+            width: 100%;
+            margin: 0 auto;
+            background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+            border-radius: 40px;
+            padding: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+        
+        .phone-screen {
+            background-color: #000;
+            border-radius: 32px;
+            padding: 8px;
+            overflow: hidden;
+        }
+        
+        .phone-notch {
+            width: 150px;
+            height: 25px;
+            background-color: #000;
+            border-radius: 0 0 20px 20px;
+            margin: 0 auto;
+            position: relative;
+            z-index: 10;
+        }
+        
+        .container {
+            max-width: 100%;
+            margin: 0 auto;
+            background-color: #fff;
+            border-radius: 24px;
+            overflow: hidden;
+            min-height: calc(100vh - 100px);
+        }
+        
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #4A90E2 0%, #2980b9 100%);
+            color: white;
+            padding: 24px 20px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        
+        .header .name {
+            font-size: 18px;
+            margin-bottom: 4px;
+            opacity: 0.9;
+        }
+        
+        .header .date {
+            font-size: 16px;
+            opacity: 0.8;
+        }
+        
+        /* Section */
+        .section {
+            padding: 24px 20px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: #333;
+        }
+        
+        .section-title .avg-score {
+            font-size: 24px;
+            font-weight: bold;
+            color: #4A90E2;
+            margin-left: 8px;
+        }
+        
+        /* Total Score Block */
+        .total-score {
+            text-align: center;
+            padding: 32px 20px;
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+        }
+        
+        .total-score .score {
+            font-size: 64px;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+        
+        .total-score .level {
+            font-size: 24px;
+            font-weight: 600;
+        }
+        
+        /* Chart Container */
+        .chart-container {
+            margin: 20px 0;
+            position: relative;
+            height: 300px;
+        }
+        
+        .chart-container canvas {
+            max-width: 100%;
+            height: auto;
+        }
+        
+        /* PRIMARY Bar Chart */
+        .bar-chart {
+            margin-top: 16px;
+        }
+        
+        .bar-item {
+            margin-bottom: 16px;
+        }
+        
+        .bar-label {
+            font-size: 16px;
+            margin-bottom: 6px;
+            color: #555;
+        }
+        
+        .bar-wrapper {
+            position: relative;
+            height: 32px;
+            background-color: #e0e0e0;
+            border-radius: 16px;
+            overflow: hidden;
+        }
+        
+        .bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4A90E2 0%, #2980b9 100%);
+            border-radius: 16px;
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-right: 12px;
+            color: white;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        
+        /* PROCESS Radar Chart */
+        .radar-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 20px 0;
+        }
+        
+        /* AES Section */
+        .section-title .aes-avg {
+            font-size: 24px;
+            font-weight: bold;
+            color: #4A90E2;
+            margin-left: 8px;
+        }
+        
+        .aes-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 16px;
+            margin-top: 16px;
+            max-width: 300px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        
+        .aes-item {
+            background-color: #f8f9fa;
+            padding: 16px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .aes-item-label {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #333;
+        }
+        
+        .aes-item-score {
+            font-size: 32px;
+            font-weight: bold;
+            color: #4A90E2;
+        }
+        
+        .aes-comment {
+            margin-top: 20px;
+            padding: 16px;
+            background-color: #f0f4ff;
+            border-left: 4px solid #4A90E2;
+            border-radius: 4px;
+            font-size: 16px;
+            line-height: 1.6;
+        }
+        
+        /* Status Badge */
+        .status-badge {
+            display: inline-block;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 16px;
+        }
+        
+        .status-valid,
+        .status-妥当 {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        
+        .status-caution,
+        .status-注意 {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+        
+        .status-re_eval,
+        .status-再評価 {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        
+        /* Overall Comment */
+        .overall-comment {
+            background-color: #fff9e6;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #ffc107;
+            font-size: 16px;
+            line-height: 1.8;
+        }
+        
+        /* CTA Section */
+        .cta-section {
+            background: linear-gradient(135deg, #4A90E2 0%, #2980b9 100%);
+            color: white;
+            text-align: center;
+            padding: 32px 20px;
+        }
+        
+        .cta-title {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+        
+        .cta-description {
+            font-size: 16px;
+            margin-bottom: 20px;
+            opacity: 0.9;
+            line-height: 1.6;
+            text-align: left;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        
+        .cta-description p {
+            margin-bottom: 8px;
+        }
+        
+        .cta-benefits {
+            list-style: none;
+            padding-left: 0;
+            margin-top: 8px;
+            margin-bottom: 0;
+        }
+        
+        .cta-benefits li {
+            padding: 4px 0;
+            padding-left: 24px;
+            position: relative;
+        }
+        
+        .cta-benefits li:before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            color: #fff;
+            font-weight: bold;
+        }
+        
+        .cta-button {
+            display: inline-block;
+            background-color: white;
+            color: #4A90E2;
+            padding: 14px 32px;
+            border-radius: 24px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 16px;
+            transition: transform 0.2s;
+        }
+        
+        .cta-button:hover {
+            transform: scale(1.05);
+        }
+        
+        @media (max-width: 480px) {
+            body {
+                padding: 10px;
+            }
+            .phone-wrapper {
+                max-width: 100%;
+                border-radius: 30px;
+                padding: 8px;
+            }
+            .phone-screen {
+                border-radius: 24px;
+                padding: 6px;
+            }
+            .phone-notch {
+                width: 120px;
+                height: 20px;
+            }
+        }
+        
+        @media print {
+            body {
+                background-color: white;
+                padding: 0;
+            }
+            .phone-wrapper,
+            .phone-screen,
+            .phone-notch {
+                display: none;
+            }
+            .container {
+                border-radius: 0;
+            }
+            .section {
+                page-break-inside: avoid;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="phone-wrapper">
+        <div class="phone-screen">
+            <div class="phone-notch"></div>
+            <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>AI-CATS 簡易診断レポート</h1>
+            ${respondent_name_html}
+            <div class="date">${diagnosis_date}</div>
+        </div>
+        
+        <!-- Total Score Block -->
+        <div class="total-score">
+            <div class="score">${total_score}</div>
+            <div class="level">${level}</div>
+        </div>
+        
+        <!-- PRIMARY Bar Chart -->
+        <div class="section">
+            <div class="section-title">PRIMARY スキル評価<span class="avg-score">${primary_avg}</span></div>
+            <div class="bar-chart" id="primaryBars"></div>
+        </div>
+        
+        <!-- PROCESS Radar Chart -->
+        <div class="section">
+            <div class="section-title">PROCESS 評価<span class="avg-score">${process_avg}</span></div>
+            <div class="radar-container">
+                <canvas id="processRadar" width="300" height="300"></canvas>
+            </div>
+        </div>
+        
+        <!-- AES Section -->
+        <div class="section">
+            <div class="section-title">AES（記述評価）<span class="aes-avg">${aes_avg}</span></div>
+            <div class="aes-grid">
+                <div class="aes-item">
+                    <div class="aes-item-label">明瞭さ (Clarity)</div>
+                    <div class="aes-item-score">${aes_clarity}</div>
+                </div>
+                <div class="aes-item">
+                    <div class="aes-item-label">論理性 (Logic)</div>
+                    <div class="aes-item-score">${aes_logic}</div>
+                </div>
+                <div class="aes-item">
+                    <div class="aes-item-label">関連性 (Relevance)</div>
+                    <div class="aes-item-score">${aes_relevance}</div>
+                </div>
+            </div>
+            <div class="aes-comment">${aes_comment}</div>
+        </div>
+        
+        <!-- Overall Comment -->
+        <div class="section">
+            <div class="section-title">総合コメント（強み／弱み）</div>
+            ${status_html}
+            <div class="overall-comment">${overall_comment}</div>
+        </div>
+        
+        <!-- CTA Section -->
+        <div class="cta-section">
+            <div class="cta-title">AI-CATS本診断のご案内</div>
+            <div class="cta-description">
+                <p>この簡易診断では、あなたの思考傾向を5つのスキルと思考プロセスで評価しました。</p>
+                <p>より詳細な診断と組織全体の分析をご希望の場合は、AI-CATS本診断をご利用ください。</p>
+                <p><strong>本診断の主なメリット：</strong></p>
+                <ul class="cta-benefits">
+                    <li>より詳細なスキル評価と個別フィードバック</li>
+                    <li>組織全体の思考傾向の可視化と比較分析</li>
+                    <li>AI活用能力の包括的な診断と改善提案</li>
+                    <li>チーム単位での診断とレポート生成</li>
+                </ul>
+            </div>
+            <a href="https://ai-cats.gs-group.jp/@ai-cats1" target="_blank" class="cta-button">AI-CATS本診断へ</a>
+        </div>
+    </div>
+    
+    <script>
+        // PRIMARY Bar Chart
+        const primaryData = ${primary_data_json};
+        const barContainer = document.getElementById('primaryBars');
+        if (barContainer && primaryData) {
+            for (const [label, score] of Object.entries(primaryData)) {
+                const percentage = (score / 5.0) * 100;
+                const barItem = document.createElement('div');
+                barItem.className = 'bar-item';
+                barItem.innerHTML = `
+                    <div class="bar-label">${label}</div>
+                    <div class="bar-wrapper">
+                        <div class="bar-fill" style="width: ${percentage}%">${score.toFixed(1)}</div>
+                    </div>
+                `;
+                barContainer.appendChild(barItem);
+            }
+        }
+        
+        // PROCESS Radar Chart
+        const canvas = document.getElementById('processRadar');
+        const ctx = canvas.getContext('2d');
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        const radius = 100;
+        const processData = ${process_data_json};
+        const labels = Object.keys(processData);
+        const values = Object.values(processData);
+        const maxValue = 5;
+        const angleStep = (Math.PI * 2) / labels.length;
+        
+        // Draw grid
+        ctx.strokeStyle = '#e0e0e0';
+        ctx.lineWidth = 1;
+        for (let i = 1; i <= 5; i++) {
+            const r = (radius / 5) * i;
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, r, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+        
+        // Draw axes
+        ctx.strokeStyle = '#ccc';
+        ctx.lineWidth = 1;
+        for (let i = 0; i < labels.length; i++) {
+            const angle = angleStep * i - Math.PI / 2;
+            const x = centerX + Math.cos(angle) * radius;
+            const y = centerY + Math.sin(angle) * radius;
+            ctx.beginPath();
+            ctx.moveTo(centerX, centerY);
+            ctx.lineTo(x, y);
+            ctx.stroke();
+        }
+        
+        // Draw data polygon
+        ctx.fillStyle = 'rgba(74, 144, 226, 0.3)';
+        ctx.strokeStyle = '#4A90E2';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let i = 0; i < labels.length; i++) {
+            const angle = angleStep * i - Math.PI / 2;
+            const value = values[i] || 0;
+            const r = (radius / maxValue) * value;
+            const x = centerX + Math.cos(angle) * r;
+            const y = centerY + Math.sin(angle) * r;
+            if (i === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        
+        // Draw labels
+        ctx.fillStyle = '#333';
+        ctx.font = '14px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        for (let i = 0; i < labels.length; i++) {
+            const angle = angleStep * i - Math.PI / 2;
+            const x = centerX + Math.cos(angle) * (radius + 20);
+            const y = centerY + Math.sin(angle) * (radius + 20);
+            ctx.fillText(labels[i], x, y);
+        }
+        
+        // Draw value labels
+        ctx.fillStyle = '#4A90E2';
+        ctx.font = 'bold 12px sans-serif';
+        for (let i = 0; i < labels.length; i++) {
+            const angle = angleStep * i - Math.PI / 2;
+            const value = values[i] || 0;
+            const r = (radius / maxValue) * value;
+            const x = centerX + Math.cos(angle) * r;
+            const y = centerY + Math.sin(angle) * r;
+            ctx.fillText(value.toFixed(1), x, y - 15);
+        }
+    </script>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+

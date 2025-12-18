@@ -17,25 +17,21 @@ class JsonParser:
         if not parsed or not isinstance(parsed, dict):
             return None
         
-        # Validate scores are numbers
+        # Validate scores are numbers (1 decimal place)
         for score_key in ['primary_score', 'sub_score', 'process_score']:
             score = parse_number(parsed.get(score_key), float('nan'))
-            if score == float('nan') or score < 0 or score > 5:
+            if score == float('nan') or score < 1.0 or score > 5.0:
                 print(f"Warning: Invalid {score_key} for Q{question_number}: {parsed.get(score_key)}")
                 return None
-            parsed[score_key] = round(score, 2)
+            parsed[score_key] = round(score, 1)
         
-        # Validate AES components (clarity, logic, relevance)
+        # Validate AES components (clarity, logic, relevance) - 1 decimal place
         for aes_key in ['aes_clarity', 'aes_logic', 'aes_relevance']:
             score = parse_number(parsed.get(aes_key), float('nan'))
-            if score == float('nan') or score < 0 or score > 5:
+            if score == float('nan') or score < 1.0 or score > 5.0:
                 print(f"Warning: Invalid {aes_key} for Q{question_number}: {parsed.get(aes_key)}")
                 return None
-            parsed[aes_key] = round(score, 2)
-        
-        # Validate increase/decrease points (optional, default 0)
-        parsed['increase_points'] = parse_number(parsed.get('increase_points', 0), 0)
-        parsed['decrease_points'] = parse_number(parsed.get('decrease_points', 0), 0)
+            parsed[aes_key] = round(score, 1)
         
         # Validate evidence and judgment_reason (required)
         if not parsed.get('evidence') or not parsed.get('judgment_reason'):
@@ -53,13 +49,18 @@ class JsonParser:
         if not parsed or not isinstance(parsed, dict):
             return None
         
-        # Validate scores are numbers
+        # Validate scores are numbers (1 decimal place)
         for score_key in ['primary_score', 'sub_score', 'process_score']:
             score = parse_number(parsed.get(score_key), float('nan'))
-            if score == float('nan') or score < 0 or score > 5:
+            if score == float('nan') or score < 1.0 or score > 5.0:
                 print(f"Warning: Invalid {score_key} for Q{question_number}: {parsed.get(score_key)}")
                 return None
-            parsed[score_key] = round(score, 2)
+            parsed[score_key] = round(score, 1)
+        
+        # Validate difference_note (required)
+        if not parsed.get('difference_note'):
+            print(f"Warning: Missing difference_note for Q{question_number}")
+            return None
         
         # Add question number for reference
         parsed['question_number'] = question_number
@@ -71,14 +72,6 @@ class JsonParser:
         parsed = self._parse_with_repair(raw)
         if not parsed or not isinstance(parsed, dict):
             return None
-        
-        # Validate top_strengths (should be a list)
-        if 'top_strengths' not in parsed or not isinstance(parsed['top_strengths'], list):
-            parsed['top_strengths'] = []
-        
-        # Validate top_weaknesses (should be a list)
-        if 'top_weaknesses' not in parsed or not isinstance(parsed['top_weaknesses'], list):
-            parsed['top_weaknesses'] = []
         
         # Validate overall_summary (required)
         if not parsed.get('overall_summary'):
@@ -103,22 +96,42 @@ class JsonParser:
         if not parsed or not isinstance(parsed, dict):
             return None
         
-        # Validate consistency_score
+        # Validate consistency_score (0.0-1.0 range based on formula: 1 - (score_std / 2.5))
         consistency_score = parse_number(parsed.get('consistency_score'), float('nan'))
-        if consistency_score == float('nan') or consistency_score < 1 or consistency_score > 5:
-            print(f"Warning: Invalid consistency_score: {parsed.get('consistency_score')}")
+        if consistency_score == float('nan') or consistency_score < 0.0 or consistency_score > 1.0:
+            print(f"Warning: Invalid consistency_score: {parsed.get('consistency_score')}. Expected 0.0-1.0 range.")
             return None
-        parsed['consistency_score'] = round(consistency_score, 2)
+        parsed['consistency_score'] = round(consistency_score, 2)  # 2 decimal places for 0-1 range
         
-        # Validate status
-        status = parsed.get('status', '').lower()
-        if status not in ['valid', 'caution', 're-evaluate']:
-            print(f"Warning: Invalid status: {parsed.get('status')}")
+        # Validate status (accept both English and Japanese)
+        status = parsed.get('status', '')
+        status_lower = status.lower()
+        # Map English to Japanese if needed
+        status_map = {
+            'valid': '妥当',
+            'caution': '注意',
+            're-evaluate': '再評価',
+            'reevaluate': '再評価'
+        }
+        if status_lower in status_map:
+            status = status_map[status_lower]
+        elif status not in ['妥当', '注意', '再評価']:
+            print(f"Warning: Invalid status: {status}")
             return None
+        parsed['status'] = status
         
-        # Validate issues (should be a list)
-        if 'issues' not in parsed or not isinstance(parsed['issues'], list):
-            parsed['issues'] = []
+        # Validate detected_issues (should be a list, accept both 'issues' and 'detected_issues')
+        detected_issues = parsed.get('detected_issues', parsed.get('issues', []))
+        if not isinstance(detected_issues, list):
+            detected_issues = []
+        parsed['detected_issues'] = detected_issues
+        
+        # Validate comment (required, should be 80-120 characters in Japanese)
+        comment = parsed.get('comment', parsed.get('summary', ''))
+        if not comment:
+            print("Warning: Missing comment in PM05 Final response")
+            return None
+        parsed['comment'] = comment
         
         return parsed
     

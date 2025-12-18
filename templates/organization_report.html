@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI-CATS 組織診断レポート - ${company_name}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
+            font-size: 17px;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #4A90E2 0%, #2980b9 100%);
+            padding: 20px;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        /* Phone Frame */
+        .phone-wrapper {
+            max-width: 414px;
+            width: 100%;
+            margin: 0 auto;
+            background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+            border-radius: 40px;
+            padding: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+        
+        .phone-screen {
+            background-color: #000;
+            border-radius: 32px;
+            padding: 8px;
+            overflow: hidden;
+        }
+        
+        .phone-notch {
+            width: 150px;
+            height: 25px;
+            background-color: #000;
+            border-radius: 0 0 20px 20px;
+            margin: 0 auto;
+            position: relative;
+            z-index: 10;
+        }
+        
+        .container {
+            max-width: 100%;
+            margin: 0 auto;
+            background-color: #fff;
+            border-radius: 24px;
+            overflow: hidden;
+            min-height: calc(100vh - 100px);
+        }
+        
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #4A90E2 0%, #2980b9 100%);
+            color: white;
+            padding: 24px 20px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        
+        .header .company {
+            font-size: 18px;
+            margin-bottom: 4px;
+        }
+        
+        .header .department {
+            font-size: 16px;
+            margin-bottom: 4px;
+            opacity: 0.9;
+        }
+        
+        .header .date {
+            font-size: 16px;
+            opacity: 0.8;
+        }
+        
+        /* Section */
+        .section {
+            padding: 24px 20px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: #333;
+        }
+        
+        /* Summary */
+        .summary-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 16px;
+            margin-top: 16px;
+        }
+        
+        .summary-item {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .summary-item-label {
+            font-size: 16px;
+            color: #666;
+            margin-bottom: 8px;
+        }
+        
+        .summary-item-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #4A90E2;
+        }
+        
+        .trend-text {
+            margin-top: 20px;
+            padding: 16px;
+            background-color: #f0f4ff;
+            border-left: 4px solid #4A90E2;
+            border-radius: 4px;
+            font-size: 16px;
+            line-height: 1.8;
+        }
+        
+        /* PRIMARY Distribution Chart Container */
+        .primary-chart-container {
+            margin: 20px 0;
+        }
+        
+        .primary-chart-item {
+            margin-bottom: 20px;
+            background-color: #f8f9fa;
+            padding: 16px;
+            border-radius: 12px;
+            border: 1px solid #e0e6ed;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        }
+        
+        .primary-chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        
+        .primary-chart-label {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .primary-chart-mean {
+            font-size: 14px;
+            font-weight: 600;
+            color: #4A90E2;
+            background-color: #e6f7ff;
+            padding: 4px 12px;
+            border-radius: 16px;
+        }
+        
+        .primary-chart-canvas {
+            width: 100%;
+            height: 100px;
+            background-color: white;
+            border-radius: 8px;
+            border: 1px solid #e0e6ed;
+        }
+        
+        .primary-chart-stats {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 6px;
+            margin-top: 10px;
+            font-size: 11px;
+        }
+        
+        .primary-chart-stat {
+            text-align: center;
+            padding: 6px 4px;
+            background-color: white;
+            border-radius: 6px;
+            border: 1px solid #e0e6ed;
+        }
+        
+        .primary-chart-stat-label {
+            font-size: 10px;
+            color: #666;
+            margin-bottom: 3px;
+            font-weight: 500;
+        }
+        
+        .primary-chart-stat-value {
+            font-weight: 700;
+            color: #4A90E2;
+            font-size: 13px;
+        }
+        
+        /* Radar Chart - Team-based with variance */
+        .radar-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 12px 0;
+            position: relative;
+        }
+        
+        .radar-wrapper {
+            position: relative;
+            display: inline-block;
+        }
+        
+        .radar-variance-info {
+            margin-top: 10px;
+            padding: 8px;
+            background-color: #f0f4ff;
+            border-radius: 6px;
+            font-size: 12px;
+            text-align: center;
+            color: #333;
+        }
+        
+        /* Section Title with Average */
+        .section-title-with-avg {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        
+        .section-title-with-avg .section-title {
+            margin-bottom: 0;
+        }
+        
+        .section-avg {
+            font-size: 18px;
+            font-weight: 600;
+            color: #4A90E2;
+            background-color: #e6f7ff;
+            padding: 6px 16px;
+            border-radius: 20px;
+        }
+        
+        /* Item Scores Grid */
+        .item-scores-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            gap: 8px;
+            margin-top: 12px;
+        }
+        
+        .item-score-card {
+            background-color: white;
+            padding: 8px 6px;
+            border-radius: 6px;
+            border: 1px solid #e0e6ed;
+            text-align: center;
+        }
+        
+        .item-score-label {
+            font-size: 11px;
+            color: #666;
+            margin-bottom: 4px;
+            line-height: 1.2;
+        }
+        
+        .item-score-value {
+            font-size: 16px;
+            font-weight: 600;
+            color: #4A90E2;
+            margin-bottom: 2px;
+        }
+        
+        .item-score-range {
+            font-size: 9px;
+            color: #999;
+        }
+        
+        /* Maturity Rating */
+        .maturity-section {
+            text-align: center;
+            padding: 32px 20px;
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            border-radius: 8px;
+        }
+        
+        .maturity-rating {
+            font-size: 72px;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+        
+        .maturity-label {
+            font-size: 20px;
+            font-weight: 600;
+        }
+        
+        .maturity-description {
+            margin-top: 16px;
+            font-size: 16px;
+            opacity: 0.9;
+        }
+        
+        /* CTA Section */
+        .cta-section {
+            background: linear-gradient(135deg, #4A90E2 0%, #2980b9 100%);
+            color: white;
+            text-align: center;
+            padding: 32px 20px;
+        }
+        
+        .cta-title {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+        
+        .cta-content {
+            font-size: 16px;
+            margin-bottom: 20px;
+            opacity: 0.9;
+            line-height: 1.6;
+            text-align: left;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        
+        .cta-content p {
+            margin-bottom: 8px;
+        }
+        
+        .cta-content ul {
+            margin: 8px 0;
+            padding-left: 24px;
+        }
+        
+        .cta-content li {
+            margin-bottom: 4px;
+        }
+        
+        .cta-button {
+            display: inline-block;
+            background-color: white;
+            color: #4A90E2;
+            padding: 14px 32px;
+            border-radius: 24px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 16px;
+            transition: transform 0.2s;
+            margin-top: 16px;
+        }
+        
+        .cta-button:hover {
+            transform: scale(1.05);
+        }
+        
+        @media (max-width: 480px) {
+            body {
+                padding: 10px;
+            }
+            .phone-wrapper {
+                max-width: 100%;
+                border-radius: 30px;
+                padding: 8px;
+            }
+            .phone-screen {
+                border-radius: 24px;
+                padding: 6px;
+            }
+            .phone-notch {
+                width: 120px;
+                height: 20px;
+            }
+        }
+        
+        @media print {
+            body {
+                background-color: white;
+                padding: 0;
+            }
+            .phone-wrapper,
+            .phone-screen,
+            .phone-notch {
+                display: none;
+            }
+            .container {
+                border-radius: 0;
+            }
+            .section {
+                page-break-inside: avoid;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="phone-wrapper">
+        <div class="phone-screen">
+            <div class="phone-notch"></div>
+            <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>AI-CATS 組織診断レポート</h1>
+            <div class="company">${company_name}${department_html}</div>
+            <div class="date">${generation_date}</div>
+        </div>
+        
+        <!-- Summary Section -->
+        <div class="section">
+            <div class="section-title">サマリー</div>
+            <div class="summary-grid">
+                <div class="summary-item">
+                    <div class="summary-item-label">診断人数</div>
+                    <div class="summary-item-value">${count}名</div>
+                </div>
+                <div class="summary-item">
+                    <div class="summary-item-label">平均スコア</div>
+                    <div class="summary-item-value">${avg_total_score}</div>
+                </div>
+            </div>
+            <div class="trend-text">${trend_analysis}</div>
+        </div>
+        
+         <!-- PRIMARY Bar Chart -->
+         <div class="section">
+             <div class="section-title-with-avg">
+                 <div class="section-title">PRIMARY スキル比較</div>
+                 <div class="section-avg">平均: ${primary_avg}</div>
+             </div>
+             <div class="primary-chart-container" id="primaryCharts"></div>
+         </div>
+        
+        <!-- PROCESS Radar Chart -->
+        <div class="section">
+            <div class="section-title-with-avg">
+                <div class="section-title">PROCESS 比較（レーダー）</div>
+                <div class="section-avg">平均: ${process_avg}</div>
+            </div>
+            <div class="radar-container">
+                <div class="radar-wrapper">
+                    <canvas id="processRadar" width="350" height="350"></canvas>
+                </div>
+            </div>
+            <div class="radar-variance-info" id="processVarianceInfo"></div>
+            <div class="item-scores-grid" id="processItemScores"></div>
+        </div>
+        
+        <!-- AES Scores -->
+        <div class="section">
+            <div class="section-title-with-avg">
+                <div class="section-title">AES（記述評価）</div>
+                <div class="section-avg">平均: ${aes_avg}</div>
+            </div>
+            <div class="item-scores-grid" id="aesItemScores"></div>
+        </div>
+        
+        <!-- AI Maturity Rating -->
+        <div class="section">
+            <div class="section-title">AI活用成熟度</div>
+            <div class="maturity-section">
+                <div class="maturity-rating">${maturity_rating}</div>
+                <div class="maturity-label">評価レベル</div>
+                ${maturity_description_html}
+            </div>
+        </div>
+        
+        <!-- CTA Section -->
+        ${cta_section_html}
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // PRIMARY Distribution Chart Data
+        const primaryData = ${primary_data_json};
+        
+        // Draw horizontal distribution chart with all data points
+        function drawPrimaryChart(canvasId, data) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas || !data) return;
+            
+            const ctx = canvas.getContext('2d');
+            const width = canvas.width;
+            const height = canvas.height;
+             const padding = { top: 15, right: 20, bottom: 25, left: 40 };
+             const chartWidth = width - padding.left - padding.right;
+             const chartHeight = height - padding.top - padding.bottom;
+             const centerY = padding.top + chartHeight / 2;
+            
+            ctx.clearRect(0, 0, width, height);
+            
+            // Scale function: maps value (1.0-5.0) to x position
+            const scaleX = (value) => {
+                return padding.left + ((value - 1.0) / 4.0) * chartWidth;
+            };
+            
+            // Draw background grid
+            ctx.strokeStyle = '#f0f0f0';
+            ctx.lineWidth = 1;
+            for (let i = 1; i <= 5; i++) {
+                const x = scaleX(i);
+                ctx.beginPath();
+                ctx.moveTo(x, padding.top);
+                ctx.lineTo(x, height - padding.bottom);
+                ctx.stroke();
+                
+                // Grid labels
+                ctx.fillStyle = '#999';
+                ctx.font = '12px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'top';
+                ctx.fillText(i.toFixed(1), x, height - padding.bottom + 8);
+            }
+            
+            // Draw horizontal center line
+            ctx.strokeStyle = '#e0e0e0';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(padding.left, centerY);
+            ctx.lineTo(width - padding.right, centerY);
+            ctx.stroke();
+            
+            // Calculate positions
+            const minX = scaleX(data.min);
+            const q1X = scaleX(data.q1);
+            const medianX = scaleX(data.median);
+            const q3X = scaleX(data.q3);
+            const maxX = scaleX(data.max);
+            const meanX = scaleX(data.mean);
+            
+             // Draw distribution area (IQR)
+             const boxWidth = q3X - q1X;
+             const boxHeight = 35;
+            const gradient = ctx.createLinearGradient(q1X, centerY - boxHeight/2, q3X, centerY + boxHeight/2);
+            gradient.addColorStop(0, 'rgba(74, 144, 226, 0.3)');
+            gradient.addColorStop(0.5, 'rgba(74, 144, 226, 0.2)');
+            gradient.addColorStop(1, 'rgba(74, 144, 226, 0.3)');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(q1X, centerY - boxHeight/2, boxWidth, boxHeight);
+            
+            // Box border
+            ctx.strokeStyle = '#4A90E2';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(q1X, centerY - boxHeight/2, boxWidth, boxHeight);
+            
+            // Draw whiskers (min to Q1, Q3 to max)
+            ctx.strokeStyle = '#4A90E2';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            // Lower whisker
+            ctx.moveTo(minX, centerY);
+            ctx.lineTo(q1X, centerY);
+            ctx.moveTo(minX, centerY - 6);
+            ctx.lineTo(minX, centerY + 6);
+            // Upper whisker
+            ctx.moveTo(q3X, centerY);
+            ctx.lineTo(maxX, centerY);
+            ctx.moveTo(maxX, centerY - 6);
+            ctx.lineTo(maxX, centerY + 6);
+            ctx.stroke();
+            
+            // Median line (thick, prominent)
+            ctx.strokeStyle = '#2980b9';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(medianX, centerY - boxHeight/2);
+            ctx.lineTo(medianX, centerY + boxHeight/2);
+            ctx.stroke();
+            
+            // Draw individual data points (jittered vertically)
+            if (data.values && data.values.length > 0) {
+                ctx.fillStyle = 'rgba(74, 144, 226, 0.6)';
+                const jitterRange = boxHeight / 2 - 4;
+                data.values.forEach((value, idx) => {
+                    const x = scaleX(value);
+                    const jitter = (Math.sin(idx * 2.3) * jitterRange);
+                    const y = centerY + jitter;
+                    ctx.beginPath();
+                    ctx.arc(x, y, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+            }
+            
+            // Mean marker (prominent circle)
+            ctx.fillStyle = '#2980b9';
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(meanX, centerY, 8, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            
+             // Mean value label (smaller, above)
+             ctx.fillStyle = '#2980b9';
+             ctx.font = 'bold 11px sans-serif';
+             ctx.textAlign = 'center';
+             ctx.textBaseline = 'bottom';
+             ctx.fillText('平均: ' + data.mean.toFixed(1), meanX, centerY - boxHeight/2 - 5);
+             
+             // Median label (smaller, below)
+             ctx.fillStyle = '#2980b9';
+             ctx.font = 'bold 10px sans-serif';
+             ctx.textBaseline = 'top';
+             ctx.fillText('中央値: ' + data.median.toFixed(1), medianX, centerY + boxHeight/2 + 5);
+        }
+        
+         // Generate chart containers and draw them
+         const primaryChartContainer = document.getElementById('primaryCharts');
+         if (primaryChartContainer && primaryData) {
+             let index = 0;
+             for (const [label, data] of Object.entries(primaryData)) {
+                 const canvasId = `primaryChart_${index}`;
+                 const chartItem = document.createElement('div');
+                 chartItem.className = 'primary-chart-item';
+                 chartItem.innerHTML = `
+                     <div class="primary-chart-header">
+                         <div class="primary-chart-label">${label}</div>
+                         <div class="primary-chart-mean">平均: ${data.mean.toFixed(1)}</div>
+                     </div>
+                     <canvas id="${canvasId}" class="primary-chart-canvas" width="600" height="100"></canvas>
+                     <div class="primary-chart-stats">
+                         <div class="primary-chart-stat">
+                             <div class="primary-chart-stat-label">最小</div>
+                             <div class="primary-chart-stat-value">${data.min.toFixed(1)}</div>
+                         </div>
+                         <div class="primary-chart-stat">
+                             <div class="primary-chart-stat-label">Q1</div>
+                             <div class="primary-chart-stat-value">${data.q1.toFixed(1)}</div>
+                         </div>
+                         <div class="primary-chart-stat">
+                             <div class="primary-chart-stat-label">中央値</div>
+                             <div class="primary-chart-stat-value">${data.median.toFixed(1)}</div>
+                         </div>
+                         <div class="primary-chart-stat">
+                             <div class="primary-chart-stat-label">Q3</div>
+                             <div class="primary-chart-stat-value">${data.q3.toFixed(1)}</div>
+                         </div>
+                         <div class="primary-chart-stat">
+                             <div class="primary-chart-stat-label">最大</div>
+                             <div class="primary-chart-stat-value">${data.max.toFixed(1)}</div>
+                         </div>
+                     </div>
+                 `;
+                 primaryChartContainer.appendChild(chartItem);
+                 drawPrimaryChart(canvasId, data);
+                 index++;
+             }
+         }
+        
+        // PROCESS Radar Chart - Team-based with variance display
+        const processData = ${process_data_json};
+        const processItemScoresContainer = document.getElementById('processItemScores');
+        const processVarianceInfo = document.getElementById('processVarianceInfo');
+         const canvas = document.getElementById('processRadar');
+         const ctx = canvas.getContext('2d');
+         const centerX = canvas.width / 2;
+         const centerY = canvas.height / 2;
+         const radius = 100;
+        const labels = Object.keys(processData);
+        const maxValue = 5;
+        const angleStep = (Math.PI * 2) / labels.length;
+        
+        // Calculate means and variances
+        const means = labels.map(label => processData[label].mean || 0);
+        const stds = labels.map(label => processData[label].std || 0);
+        const mins = labels.map(label => processData[label].min || 0);
+        const maxs = labels.map(label => processData[label].max || 0);
+        
+        // Draw grid
+        ctx.strokeStyle = '#e0e0e0';
+        ctx.lineWidth = 1;
+        for (let i = 1; i <= 5; i++) {
+            const r = (radius / 5) * i;
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, r, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+        
+        // Draw axes
+        ctx.strokeStyle = '#ccc';
+        ctx.lineWidth = 1;
+        for (let i = 0; i < labels.length; i++) {
+            const angle = angleStep * i - Math.PI / 2;
+            const x = centerX + Math.cos(angle) * radius;
+            const y = centerY + Math.sin(angle) * radius;
+            ctx.beginPath();
+            ctx.moveTo(centerX, centerY);
+            ctx.lineTo(x, y);
+            ctx.stroke();
+        }
+        
+        // Draw variance area (min to max range)
+        ctx.fillStyle = 'rgba(74, 144, 226, 0.1)';
+        ctx.beginPath();
+        for (let i = 0; i < labels.length; i++) {
+            const angle = angleStep * i - Math.PI / 2;
+            const maxVal = maxs[i] || 0;
+            const r = (radius / maxValue) * maxVal;
+            const x = centerX + Math.cos(angle) * r;
+            const y = centerY + Math.sin(angle) * r;
+            if (i === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
+        }
+        ctx.closePath();
+        ctx.fill();
+        
+        // Draw mean polygon (main data)
+        ctx.fillStyle = 'rgba(74, 144, 226, 0.4)';
+        ctx.strokeStyle = '#4A90E2';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        for (let i = 0; i < labels.length; i++) {
+            const angle = angleStep * i - Math.PI / 2;
+            const value = means[i] || 0;
+            const r = (radius / maxValue) * value;
+            const x = centerX + Math.cos(angle) * r;
+            const y = centerY + Math.sin(angle) * r;
+            if (i === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        
+        // Draw std deviation indicators (error bars on each axis)
+        ctx.strokeStyle = 'rgba(74, 144, 226, 0.6)';
+        ctx.lineWidth = 2;
+        for (let i = 0; i < labels.length; i++) {
+            const angle = angleStep * i - Math.PI / 2;
+            const mean = means[i] || 0;
+            const std = stds[i] || 0;
+            const upper = Math.min(5, mean + std);
+            const lower = Math.max(1, mean - std);
+            const rUpper = (radius / maxValue) * upper;
+            const rLower = (radius / maxValue) * lower;
+            const x = centerX + Math.cos(angle) * (rUpper + rLower) / 2;
+            const y = centerY + Math.sin(angle) * (rUpper + rLower) / 2;
+            const barLength = rUpper - rLower;
+            const perpAngle = angle + Math.PI / 2;
+            const perpX = Math.cos(perpAngle) * 8;
+            const perpY = Math.sin(perpAngle) * 8;
+            
+            ctx.beginPath();
+            ctx.moveTo(x - perpX, y - perpY);
+            ctx.lineTo(x + perpX, y + perpY);
+            ctx.moveTo(x + Math.cos(angle) * barLength/2 - perpX, y + Math.sin(angle) * barLength/2 - perpY);
+            ctx.lineTo(x + Math.cos(angle) * barLength/2 + perpX, y + Math.sin(angle) * barLength/2 + perpY);
+            ctx.moveTo(x - Math.cos(angle) * barLength/2 - perpX, y - Math.sin(angle) * barLength/2 - perpY);
+            ctx.lineTo(x - Math.cos(angle) * barLength/2 + perpX, y - Math.sin(angle) * barLength/2 + perpY);
+            ctx.stroke();
+        }
+        
+        // Draw labels
+        ctx.fillStyle = '#333';
+        ctx.font = 'bold 15px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        for (let i = 0; i < labels.length; i++) {
+            const angle = angleStep * i - Math.PI / 2;
+            const x = centerX + Math.cos(angle) * (radius + 30);
+            const y = centerY + Math.sin(angle) * (radius + 30);
+            ctx.fillText(labels[i], x, y);
+        }
+        
+        // Draw value labels with variance
+        ctx.fillStyle = '#4A90E2';
+        ctx.font = 'bold 13px sans-serif';
+        for (let i = 0; i < labels.length; i++) {
+            const angle = angleStep * i - Math.PI / 2;
+            const value = means[i] || 0;
+            const r = (radius / maxValue) * value;
+            const x = centerX + Math.cos(angle) * r;
+            const y = centerY + Math.sin(angle) * r;
+            ctx.fillText(value.toFixed(1), x, y - 20);
+            
+            // Show std deviation
+            if (stds[i] > 0) {
+                ctx.fillStyle = '#999';
+                ctx.font = '11px sans-serif';
+                ctx.fillText('±' + stds[i].toFixed(1), x, y - 8);
+                ctx.fillStyle = '#4A90E2';
+                ctx.font = 'bold 13px sans-serif';
+            }
+        }
+        
+        // Display variance information
+        if (processVarianceInfo) {
+            const avgStd = (stds.reduce((a, b) => a + b, 0) / stds.length).toFixed(2);
+            const maxRange = Math.max(...maxs.map((max, i) => max - mins[i])).toFixed(1);
+            processVarianceInfo.innerHTML = `
+                <strong>ばらつき情報:</strong> 平均標準偏差: ${avgStd} | 最大範囲: ${maxRange}
+            `;
+        }
+        
+        // Add individual PROCESS item score cards
+        if (processItemScoresContainer && processData) {
+            for (const [label, data] of Object.entries(processData)) {
+                const card = document.createElement('div');
+                card.className = 'item-score-card';
+                card.innerHTML = `
+                    <div class="item-score-label">${label}</div>
+                    <div class="item-score-value">${data.mean.toFixed(1)}</div>
+                    <div class="item-score-range">${data.min.toFixed(1)} - ${data.max.toFixed(1)}</div>
+                `;
+                processItemScoresContainer.appendChild(card);
+            }
+        }
+        
+        // AES Scores
+        const aesData = ${aes_data_json};
+        const aesItemScoresContainer = document.getElementById('aesItemScores');
+        if (aesItemScoresContainer && aesData) {
+            for (const [label, data] of Object.entries(aesData)) {
+                const card = document.createElement('div');
+                card.className = 'item-score-card';
+                card.innerHTML = `
+                    <div class="item-score-label">${label}</div>
+                    <div class="item-score-value">${data.mean.toFixed(1)}</div>
+                    <div class="item-score-range">${data.min.toFixed(1)} - ${data.max.toFixed(1)}</div>
+                `;
+                aesItemScoresContainer.appendChild(card);
+            }
+        }
+    </script>
+</body>
+</html>
+

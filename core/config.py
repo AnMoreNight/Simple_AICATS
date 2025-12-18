@@ -76,12 +76,10 @@ class Config:
             'llmModel': get_string('llmModel'),
             'llmApiKey': get_string('llmApiKey'),
             'maxRetries': get_number('maxRetries'),
-            'promptPM1': get_string('promptPM1', required=False),  # STEP 1: PM01 Raw Scoring
+            'promptPM1Raw': get_string('promptPM1Raw', required=False),  # STEP 1: PM01 Raw Scoring
             'promptPM1Final': get_string('promptPM1Final', required=False),  # STEP 3: PM01 Final (analysis)
-            'promptPM5': get_string('promptPM5', required=False),  # STEP 2: PM05 Raw Scoring (reverse logic)
+            'promptPM5Raw': get_string('promptPM5Raw', required=False),  # STEP 2: PM05 Raw Scoring (reverse logic)
             'promptPM5Final': get_string('promptPM5Final', required=False),  # STEP 4: PM05 Final (consistency check)
-            'promptPM2': get_string('promptPM2', required=False),
-            'promptPM3': get_string('promptPM3', required=False),
         }
         
         if not config['llmApiKey']:

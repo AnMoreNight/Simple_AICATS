@@ -14,6 +14,7 @@ load_dotenv()
 
 from services.sheets import SheetsService
 from services.report import ReportService
+from services.llm import LLMService
 from core.config import Config
 
 
@@ -24,6 +25,7 @@ def generate_report_for_respondent(respondent_id: str = None):
     config = Config.get_config(sheets_service=sheets)
     sheets.config = config
     
+    llm_service = LLMService(config)
     report_service = ReportService(output_dir="report", sheets_service=sheets)
     
     # Get all respondents
@@ -36,7 +38,7 @@ def generate_report_for_respondent(respondent_id: str = None):
             print(f"Error: Respondent ID '{respondent_id}' not found")
             return
         
-        generate_single_report(sheets, report_service, respondent)
+        generate_single_report(sheets, report_service, respondent, llm_service, config)
     else:
         # Generate reports for all completed respondents
         print(f"Generating reports for all completed respondents...")
@@ -45,13 +47,13 @@ def generate_report_for_respondent(respondent_id: str = None):
         for respondent in respondents:
             status = respondent.get('status', '').strip().lower()
             if 'pm5final完了' in status or 'pm5final完成' in status:
-                if generate_single_report(sheets, report_service, respondent):
+                if generate_single_report(sheets, report_service, respondent, llm_service, config):
                     completed_count += 1
         
         print(f"\n✓ Generated {completed_count} reports")
 
 
-def generate_single_report(sheets: SheetsService, report_service: ReportService, respondent: dict) -> bool:
+def generate_single_report(sheets: SheetsService, report_service: ReportService, respondent: dict, llm_service: LLMService, config: dict) -> bool:
     """Generate report for a single respondent."""
     try:
         respondent_id = respondent['id']
@@ -107,7 +109,9 @@ def generate_single_report(sheets: SheetsService, report_service: ReportService,
         report_result = report_service.generate_individual_report(
             respondent=respondent,
             pm01_final=pm01_final,
-            pm05_final=pm05_final
+            pm05_final=pm05_final,
+            llm_service=llm_service,
+            config=config
         )
         
         print(f"  ✓ Report generated: {report_result['filepath']}")

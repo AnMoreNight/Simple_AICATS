@@ -80,6 +80,8 @@ class Config:
             'promptPM1Final': get_string('promptPM1Final', required=False),  # STEP 3: PM01 Final (analysis)
             'promptPM5Raw': get_string('promptPM5Raw', required=False),  # STEP 2: PM05 Raw Scoring (reverse logic)
             'promptPM5Final': get_string('promptPM5Final', required=False),  # STEP 4: PM05 Final (consistency check)
+            'promptOrg': get_string('promptOrg', required=False),  # Organization Report Generation
+            'promptInd': get_string('promptInd', required=False),  # Individual Report Generation
         }
         
         if not config['llmApiKey']:

@@ -78,7 +78,7 @@ class LLMService:
         """
         prompt = self._build_pm01_final_prompt(respondent, pm05_raw_results, aggregated_scores)
         
-        response = self._invoke_llm(prompt, attempt, "You are an expert analyst. Output ONLY valid JSON.")
+        response = self._invoke_llm(prompt, attempt, "You are an expert analyst. Output ONLY valid JSON with all text in Japanese.")
         if not response:
             return None
         
@@ -98,7 +98,7 @@ class LLMService:
         """
         prompt = self._build_pm05_final_prompt(respondent, pm01_final)
         
-        response = self._invoke_llm(prompt, attempt, "You are a consistency evaluator. Output ONLY valid JSON.")
+        response = self._invoke_llm(prompt, attempt, "You are a consistency evaluator. Output ONLY valid JSON with comment field in Japanese.")
         if not response:
             return None
         

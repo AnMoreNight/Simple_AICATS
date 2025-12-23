@@ -13,6 +13,7 @@ load_dotenv()
 
 from services.sheets import SheetsService
 from services.report import ReportService
+from services.llm import LLMService
 from core.config import Config
 
 
@@ -53,12 +54,15 @@ def generate_org_report(company_name: str, department: str = None):
     sheets.config = config
     
     report_service = ReportService(output_dir="report", sheets_service=sheets)
+    llm_service = LLMService(config)
     
     try:
         report_output = report_service.generate_organization_report(
             company_name=company_name,
             sheets_service=sheets,
-            department_filter=department
+            department_filter=department,
+            llm_service=llm_service,
+            config=config
         )
         print(f"\n✓ Organization report generated: {report_output['filepath']}")
         print(f"  ✓ Report URL: {report_output['url']}")

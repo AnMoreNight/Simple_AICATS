@@ -379,7 +379,9 @@ def main():
                         report_result = report_service.generate_individual_report(
                             respondent=respondent,
                             pm01_final=pm01_final,
-                            pm05_final=pm05_final
+                            pm05_final=pm05_final,
+                            llm_service=llm_service,
+                            config=config
                         )
                         print(f"  ✓ Individual report generated: {report_result['filepath']}")
                         print(f"  ✓ Report URL: {report_result['url']}")

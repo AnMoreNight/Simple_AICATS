@@ -58,7 +58,9 @@ class ReportService:
         self,
         respondent: Dict[str, Any],
         pm01_final: Dict[str, Any],
-        pm05_final: Optional[Dict[str, Any]] = None
+        pm05_final: Optional[Dict[str, Any]] = None,
+        llm_service: Any = None,
+        config: Any = None
     ) -> Dict[str, str]:
         """
         Generate individual report HTML from PM01 Final and PM05 Final results.
@@ -67,12 +69,14 @@ class ReportService:
             respondent: Respondent data with id, name, company_name
             pm01_final: PM01 Final results with scores, summary, etc.
             pm05_final: PM05 Final results with consistency check (optional)
+            llm_service: Optional LLM service for generating thinking pattern analysis
+            config: Optional config object
         
         Returns:
             Dictionary with 'filepath' and 'url' keys
         """
         # Extract data for report
-        report_data = self._prepare_report_data(respondent, pm01_final, pm05_final)
+        report_data = self._prepare_report_data(respondent, pm01_final, pm05_final, llm_service, config)
         
         # Generate HTML
         html_content = self._generate_html(report_data)
@@ -113,7 +117,9 @@ class ReportService:
         self,
         respondent: Dict[str, Any],
         pm01_final: Dict[str, Any],
-        pm05_final: Optional[Dict[str, Any]]
+        pm05_final: Optional[Dict[str, Any]],
+        llm_service: Any = None,
+        config: Any = None
     ) -> Dict[str, Any]:
         """Prepare data structure for report generation."""
         # Get total_score and level from diagnosis results (no default calculation)
@@ -148,41 +154,76 @@ class ReportService:
         process_values = [v for v in process_data.values() if isinstance(v, (int, float))]
         process_avg = sum(process_values) / len(process_values) if process_values else 0
         
-        # Calculate AES components (average from per_question if available)
-        per_question = pm01_final.get('per_question', {})
-        aes_clarity_list = []
-        aes_logic_list = []
-        aes_relevance_list = []
-        
-        for q_data in per_question.values():
-            if isinstance(q_data, dict):
-                if 'aes_clarity' in q_data:
-                    aes_clarity_list.append(q_data['aes_clarity'])
-                if 'aes_logic' in q_data:
-                    aes_logic_list.append(q_data['aes_logic'])
-                if 'aes_relevance' in q_data:
-                    aes_relevance_list.append(q_data['aes_relevance'])
-        
-        aes_clarity = sum(aes_clarity_list) / len(aes_clarity_list) if aes_clarity_list else 0
-        aes_logic = sum(aes_logic_list) / len(aes_logic_list) if aes_logic_list else 0
-        aes_relevance = sum(aes_relevance_list) / len(aes_relevance_list) if aes_relevance_list else 0
+        # Get AES components directly from PM1Final aes field (aggregated by component)
+        aes_scores = pm01_final.get('aes', {})
+        aes_clarity = aes_scores.get('aes_clarity', 0)
+        aes_logic = aes_scores.get('aes_logic', 0)
+        aes_relevance = aes_scores.get('aes_relevance', 0)
         
         # Calculate AES average: average of the three components (Clarity, Logic, Relevance)
         # Formula: (Clarity + Logic + Relevance) / 3
-        aes_avg = (aes_clarity + aes_logic + aes_relevance) / 3
+        aes_avg = (aes_clarity + aes_logic + aes_relevance) / 3 if (aes_clarity + aes_logic + aes_relevance) > 0 else 0
         
-        # Get AES comment from diagnosis results (no default generation)
-        aes_comment = pm01_final.get('aes_comment', '') or (pm05_final.get('aes_comment', '') if pm05_final else '')
+        # Get overall comment from PM1Final overall_summary (fallback)
+        overall_comment = pm01_final.get('overall_summary', '')
         
-        # Get overall comment from PM05 Final if available, otherwise use PM01 Final summary
-        overall_comment = ""
-        if pm05_final and pm05_final.get('comment'):
-            overall_comment = pm05_final['comment']
-        elif pm01_final.get('overall_summary'):
-            overall_comment = pm01_final['overall_summary']
+        # Generate thinking pattern analysis using LLM
+        thinking_patterns = ''
+        why_get_stuck = ''
+        actionable_hints = ''
         
-        # Get status from diagnosis results (no default)
-        status = pm05_final.get('status', '') if pm05_final else ''
+        if llm_service and config:
+            try:
+                # Get prompt from config sheet
+                prompt_text = config.get('promptInd', '').strip()
+                if not prompt_text:
+                    raise ValueError("promptInd not configured in Config sheet. Required for individual report generation.")
+                
+                # Build data section for individual thinking pattern analysis
+                prompt_lines = []
+                prompt_lines.append("# Individual Diagnosis Report Generation")
+                prompt_lines.append(f"Respondent: {respondent.get('name', 'N/A')}")
+                prompt_lines.append(f"Total Score: {round(total_score, 1)}")
+                prompt_lines.append("")
+                prompt_lines.append("## Score Details")
+                prompt_lines.append("### PRIMARY Skills:")
+                for category, score in primary_data.items():
+                    prompt_lines.append(f"- {category}: {score}")
+                prompt_lines.append("")
+                prompt_lines.append("### PROCESS Evaluation:")
+                for category, score in process_data.items():
+                    prompt_lines.append(f"- {category}: {score}")
+                prompt_lines.append("")
+                prompt_lines.append("### AES Evaluation:")
+                prompt_lines.append(f"- Clarity: {round(aes_clarity, 1)}")
+                prompt_lines.append(f"- Logic: {round(aes_logic, 1)}")
+                prompt_lines.append(f"- Relevance: {round(aes_relevance, 1)}")
+                prompt_lines.append("")
+                if overall_comment:
+                    prompt_lines.append("## Existing Overall Evaluation")
+                    prompt_lines.append(overall_comment)
+                    prompt_lines.append("")
+                prompt_lines.append("---")
+                prompt_lines.append("")
+                prompt_lines.append("## Analysis Instructions")
+                prompt_lines.append(prompt_text)
+                
+                prompt = "\n".join(prompt_lines)
+                response = llm_service._invoke_llm(prompt, 1, "You are an expert thinking pattern analyst. Focus on practical insights, not scores. Output ONLY valid JSON with all text in Japanese.")
+                
+                if response:
+                    try:
+                        parsed = json.loads(response)
+                        thinking_patterns = parsed.get('thinking_patterns', '')
+                        why_get_stuck = parsed.get('why_get_stuck', '')
+                        actionable_hints = parsed.get('actionable_hints', '')
+                    except json.JSONDecodeError:
+                        print("Warning: Failed to parse LLM response for thinking pattern analysis")
+                        print(f"Response: {response[:500]}")
+            except Exception as e:
+                print(f"Warning: Failed to generate thinking pattern analysis: {e}")
+                import traceback
+                traceback.print_exc()
         
         return {
             'respondent_id': respondent.get('id', ''),
@@ -198,10 +239,11 @@ class ReportService:
             'aes_clarity': round(aes_clarity, 1),
             'aes_logic': round(aes_logic, 1),
             'aes_relevance': round(aes_relevance, 1),
-            'aes_comment': aes_comment,
             'overall_comment': overall_comment,
-            'status': status,
-            'ai_use_level': pm01_final.get('ai_use_level', '')
+            'ai_use_level': pm01_final.get('ai_use_level', ''),
+            'thinking_patterns': thinking_patterns,
+            'why_get_stuck': why_get_stuck,
+            'actionable_hints': actionable_hints
         }
     
     def _json_escape(self, json_str: str) -> str:
@@ -218,20 +260,29 @@ class ReportService:
         process_data_json = json.dumps(data["process_data"], ensure_ascii=False)
         primary_data_json = json.dumps(data["primary_data"], ensure_ascii=False)
         
-        # Prepare status HTML if available
-        status = data.get('status', '')
-        if status:
-            status_display = {
-                'valid': '妥当',
-                'caution': '注意',
-                're-eval': '再評価',
-                '妥当': '妥当',
-                '注意': '注意',
-                '再評価': '再評価'
-            }.get(status, status)
-            status_html = f'<div class="status-badge status-{status.lower().replace("-", "_")}">{status_display}</div>'
+        # Format thinking pattern analysis sections
+        thinking_patterns = data.get('thinking_patterns', '')
+        why_get_stuck = data.get('why_get_stuck', '')
+        actionable_hints = data.get('actionable_hints', '')
+        
+        # Create individual slide items for carousel
+        slides = []
+        if thinking_patterns:
+            slides.append(f'<div class="analysis-slide"><div class="analysis-section"><div class="analysis-title">あなたの考え方のクセ・傾向</div><div class="analysis-content">{thinking_patterns}</div></div></div>')
+        if why_get_stuck:
+            slides.append(f'<div class="analysis-slide"><div class="analysis-section"><div class="analysis-title">なぜ詰まるのか</div><div class="analysis-content">{why_get_stuck}</div></div></div>')
+        if actionable_hints:
+            slides.append(f'<div class="analysis-slide"><div class="analysis-section hints-section"><div class="analysis-title">明日から何を変えればいいか</div><div class="analysis-content">{actionable_hints}</div></div></div>')
+        
+        # Wrap slides in carousel container (draggable, no buttons)
+        if slides:
+            analysis_sections_html = f'<div class="analysis-carousel-container"><div class="analysis-carousel" id="analysisCarousel">{"".join(slides)}</div><div class="carousel-indicators" id="carouselIndicators"></div></div>'
         else:
-            status_html = ''
+            analysis_sections_html = ''
+        
+        # Use analysis sections if available, otherwise fall back to overall_comment
+        if not analysis_sections_html and data.get('overall_comment'):
+            analysis_sections_html = f'<div class="analysis-section"><div class="analysis-title">総合評価</div><div class="analysis-content">{data["overall_comment"]}</div></div>'
         
         # Replace placeholders using Template.safe_substitute
         template_obj = Template(template)
@@ -247,17 +298,18 @@ class ReportService:
             aes_clarity=data["aes_clarity"],
             aes_logic=data["aes_logic"],
             aes_relevance=data["aes_relevance"],
-            aes_comment=data["aes_comment"],
-            status_html=status_html,
-            overall_comment=data["overall_comment"],
-            process_data_json=process_data_json
+            overall_comment=data.get("overall_comment", ""),
+            process_data_json=process_data_json,
+            analysis_sections_html=analysis_sections_html
         )
     
     def generate_organization_report(
         self,
         company_name: str,
         sheets_service: Any,
-        department_filter: Optional[str] = None
+        department_filter: Optional[str] = None,
+        llm_service: Any = None,
+        config: Any = None
     ) -> Dict[str, str]:
         """
         Generate organization report HTML from PM1Final data grouped by company.
@@ -277,7 +329,7 @@ class ReportService:
             raise ValueError(f"No data found for company: {company_name}")
         
         # Prepare report data
-        report_data = self._prepare_organization_data(org_data)
+        report_data = self._prepare_organization_data(org_data, llm_service, config)
         
         # Generate HTML
         html_content = self._generate_organization_html(report_data)
@@ -403,7 +455,12 @@ class ReportService:
             'company_name': company_name
         }
     
-    def _prepare_organization_data(self, org_data: Dict[str, Any]) -> Dict[str, Any]:
+    def _prepare_organization_data(
+        self, 
+        org_data: Dict[str, Any], 
+        llm_service: Any = None, 
+        config: Any = None
+    ) -> Dict[str, Any]:
         """Prepare data structure for organization report."""
         data_list = org_data['data']
         count = org_data['count']
@@ -521,23 +578,193 @@ class ReportService:
         # Calculate AES average (average of all AES component means)
         aes_avg = round(statistics.mean(aes_means), 1) if aes_means else 0
         
-        # Get AI maturity rating from diagnosis results (no default calculation)
-        # Count AI use levels from actual data (no hardcoded categories)
+        # Count AI use levels from actual data
         ai_level_counts = {}
         for d in data_list:
             level = d.get('ai_use_level', '')
             if level:
                 ai_level_counts[level] = ai_level_counts.get(level, 0) + 1
         
-        # Get maturity rating from diagnosis results (should be stored in PM1Final or PM5Final)
-        maturity_rating = ''
-        if data_list:
-            maturity_rating = data_list[0].get('maturity_rating', '')
+        # Calculate maturity level (S/A/B/C/D) based on average total score (0.1-5.0 scale)
+        # Level 5 (S): 4.1-5.0, Level 4 (A): 3.1-4.0, Level 3 (B): 2.1-3.0, Level 2 (C): 1.1-2.0, Level 1 (D): 0.1-1.0
+        maturity_level = 'D'
+        maturity_level_num = 1
+        if avg_total_score >= 4.1:
+            maturity_level = 'S'
+            maturity_level_num = 5
+        elif avg_total_score >= 3.1:
+            maturity_level = 'A'
+            maturity_level_num = 4
+        elif avg_total_score >= 2.1:
+            maturity_level = 'B'
+            maturity_level_num = 3
+        elif avg_total_score >= 1.1:
+            maturity_level = 'C'
+            maturity_level_num = 2
+        else:
+            maturity_level = 'D'
+            maturity_level_num = 1
         
-        # Get trend analysis from diagnosis results (no default generation)
-        trend_analysis = ''
-        if data_list:
-            trend_analysis = data_list[0].get('trend_analysis', '')
+        # Calculate variance metrics (standard deviation and coefficient of variation)
+        total_score_std = round(statistics.stdev(total_scores) if len(total_scores) > 1 else 0, 2)
+        total_score_cv = round((total_score_std / avg_total_score * 100) if avg_total_score > 0 else 0, 1)
+        
+        # Calculate variance for PRIMARY categories
+        primary_variance_metrics = {}
+        for category in primary_categories:
+            if category in primary_distributions:
+                dist = primary_distributions[category]
+                values = dist['values']
+                if len(values) > 1:
+                    std = statistics.stdev(values)
+                    mean = dist['mean']
+                    cv = (std / mean * 100) if mean > 0 else 0
+                    range_val = dist['max'] - dist['min']
+                    primary_variance_metrics[category] = {
+                        'std': round(std, 2),
+                        'cv': round(cv, 1),
+                        'range': round(range_val, 1)
+                    }
+        
+        # Calculate variance for PROCESS categories
+        process_variance_metrics = {}
+        for cat in process_categories_en:
+            jp_label = self.PROCESS_LABELS_JP[cat]
+            if jp_label in process_averages:
+                avg_data = process_averages[jp_label]
+                std = avg_data['std']
+                mean = avg_data['mean']
+                cv = (std / mean * 100) if mean > 0 else 0
+                range_val = avg_data['max'] - avg_data['min']
+                process_variance_metrics[jp_label] = {
+                    'std': std,
+                    'cv': round(cv, 1),
+                    'range': round(range_val, 1)
+                }
+        
+        # AI-related indicators for instability analysis
+        ai_indicators = []
+        for d in data_list:
+            ai_score_1 = d['scores_primary'].get('AI指示', 0) or d['scores_primary'].get('ai指示', 0)
+            ai_score_2 = d['scores_primary'].get('AI検証/優先順位判断', 0) or d['scores_primary'].get('AI検証', 0)
+            if ai_score_1 > 0 and ai_score_2 > 0:
+                ai_avg = (ai_score_1 + ai_score_2) / 2
+                ai_indicators.append(ai_avg)
+        
+        # Calculate AI score variance
+        ai_variance = {}
+        if ai_indicators and len(ai_indicators) > 1:
+            ai_mean = statistics.mean(ai_indicators)
+            ai_std = statistics.stdev(ai_indicators)
+            ai_cv = (ai_std / ai_mean * 100) if ai_mean > 0 else 0
+            ai_variance = {
+                'mean': round(ai_mean, 1),
+                'std': round(ai_std, 2),
+                'cv': round(ai_cv, 1),
+                'min': round(min(ai_indicators), 1),
+                'max': round(max(ai_indicators), 1)
+            }
+        
+        # Generate comprehensive organizational analysis using LLM
+        maturity_description = ''
+        structural_analysis = ''
+        variance_analysis = ''
+        ai_instability_explanation = ''
+        actionable_recommendations = ''
+        
+        if llm_service and config:
+            try:
+                # Get prompt from config sheet
+                prompt_text = config.get('promptOrg', '').strip()
+                if not prompt_text:
+                    raise ValueError("promptOrg not configured in Config sheet. Required for organization report generation.")
+                
+                # Build data section for organizational diagnosis
+                prompt_lines = []
+                prompt_lines.append("# Organization Diagnosis Report Generation")
+                prompt_lines.append(f"Company: {org_data['company_name']}")
+                prompt_lines.append(f"Respondents: {count}")
+                prompt_lines.append("")
+                prompt_lines.append("## 1. Judgment Base Maturity Level")
+                prompt_lines.append(f"Average Total Score: {round(avg_total_score, 1)}")
+                prompt_lines.append(f"Maturity Level: {maturity_level} (Level {maturity_level_num})")
+                if maturity_level_num == 5:
+                    prompt_lines.append("Status: Judgment base highly integrated")
+                elif maturity_level_num == 4:
+                    prompt_lines.append("Status: Judgment base functioning organizationally")
+                elif maturity_level_num == 3:
+                    prompt_lines.append("Status: Judgment base not yet organized")
+                elif maturity_level_num == 2:
+                    prompt_lines.append("Status: Judgment base unstable")
+                else:
+                    prompt_lines.append("Status: Judgment base unestablished")
+                prompt_lines.append("")
+                prompt_lines.append("## 2. Score Variance (Dispersion)")
+                prompt_lines.append(f"Total Score Std Dev: {total_score_std}")
+                prompt_lines.append(f"Total Score CV: {total_score_cv}%")
+                prompt_lines.append("")
+                prompt_lines.append("### PRIMARY Skill Variance:")
+                for category, metrics in primary_variance_metrics.items():
+                    dist = primary_distributions[category]
+                    prompt_lines.append(f"- {category}: 平均{dist['mean']}, 標準偏差{metrics['std']}, 範囲{metrics['range']} (最小{dist['min']}～最大{dist['max']})")
+                prompt_lines.append("")
+                prompt_lines.append("### PROCESS Evaluation Variance:")
+                for category, metrics in process_variance_metrics.items():
+                    avg_data = process_averages[category]
+                    prompt_lines.append(f"- {category}: Mean {avg_data['mean']}, Std Dev {metrics['std']}, Range {metrics['range']} (Min {avg_data['min']} - Max {avg_data['max']})")
+                prompt_lines.append("")
+                prompt_lines.append("## 3. AI Usage Related Scores")
+                if ai_variance:
+                    prompt_lines.append(f"AI Related Score Mean: {ai_variance['mean']}")
+                    prompt_lines.append(f"AI Related Score Std Dev: {ai_variance['std']}")
+                    prompt_lines.append(f"AI Related Score Range: {ai_variance['min']} - {ai_variance['max']}")
+                else:
+                    prompt_lines.append("AI Related Scores: Insufficient data")
+                prompt_lines.append("")
+                prompt_lines.append("### AI Usage Level Distribution:")
+                for level, count_val in ai_level_counts.items():
+                    prompt_lines.append(f"- {level}: {count_val} people")
+                prompt_lines.append("")
+                prompt_lines.append("## 4. Detailed Score Distribution")
+                prompt_lines.append("### PRIMARY Skill Distribution:")
+                for category, dist in primary_distributions.items():
+                    prompt_lines.append(f"- {category}: Mean {dist['mean']}, Median {dist['median']}, Q1 {dist['q1']}, Q3 {dist['q3']}, Min {dist['min']}, Max {dist['max']}")
+                prompt_lines.append("")
+                prompt_lines.append("### PROCESS Evaluation Distribution:")
+                for category, avg in process_averages.items():
+                    prompt_lines.append(f"- {category}: 平均{avg['mean']}, 標準偏差{avg['std']}, 最小{avg['min']}, 最大{avg['max']}")
+                prompt_lines.append("")
+                prompt_lines.append("---")
+                prompt_lines.append("")
+                prompt_lines.append("## Analysis Instructions")
+                prompt_lines.append(prompt_text)
+                
+                prompt = "\n".join(prompt_lines)
+                response = llm_service._invoke_llm(prompt, 1, "You are an expert organizational diagnosis analyst. Focus on structural issues, not individual blame. Output ONLY valid JSON with all text in Japanese.")
+                
+                if response:
+                    try:
+                        parsed = json.loads(response)
+                        maturity_description = parsed.get('maturity_description', '')
+                        structural_analysis = parsed.get('structural_analysis', '')
+                        variance_analysis = parsed.get('variance_analysis', '')
+                        ai_instability_explanation = parsed.get('ai_instability_explanation', '')
+                        actionable_recommendations = parsed.get('actionable_recommendations', '')
+                    except json.JSONDecodeError:
+                        print("Warning: Failed to parse LLM response for organizational analysis")
+                        print(f"Response: {response[:500]}")
+            except Exception as e:
+                print(f"Warning: Failed to generate organizational analysis: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        # Combine analyses for trend_analysis (backward compatibility) - keep it short
+        trend_analysis_parts = []
+        if structural_analysis:
+            trend_analysis_parts.append(structural_analysis)
+        if variance_analysis:
+            trend_analysis_parts.append(variance_analysis)
+        trend_analysis = ' '.join(trend_analysis_parts) if trend_analysis_parts else ''
         
         # Get CTA section from first respondent's data if available, otherwise use default
         cta_section_html = ''
@@ -579,12 +806,22 @@ class ReportService:
             'avg_total_score': round(avg_total_score, 1),
             'primary_distributions': primary_distributions,
             'primary_avg': primary_avg,
+            'primary_variance_metrics': primary_variance_metrics,
             'process_averages': process_averages,
             'process_avg': process_avg,
+            'process_variance_metrics': process_variance_metrics,
             'aes_averages': aes_averages,
             'aes_avg': aes_avg,
-            'maturity_rating': maturity_rating,
-            'maturity_description': '',  # Should come from diagnosis results
+            'maturity_level': maturity_level,
+            'maturity_level_num': maturity_level_num,
+            'maturity_description': maturity_description,
+            'structural_analysis': structural_analysis,
+            'variance_analysis': variance_analysis,
+            'ai_instability_explanation': ai_instability_explanation,
+            'actionable_recommendations': actionable_recommendations,
+            'total_score_std': total_score_std,
+            'total_score_cv': total_score_cv,
+            'ai_variance': ai_variance,
             'ai_level_distribution': ai_level_counts,
             'trend_analysis': trend_analysis,
             'generation_date': datetime.now().strftime('%Y年%m月%d日'),
@@ -601,8 +838,35 @@ class ReportService:
         primary_data_json = json.dumps(data['primary_distributions'], ensure_ascii=False)
         process_data_json = json.dumps(data['process_averages'], ensure_ascii=False)
         aes_data_json = json.dumps(data.get('aes_averages', {}), ensure_ascii=False)
-        # Get maturity description from diagnosis results (no default generation)
-        maturity_description_html = f'<div class="maturity-description">{data.get("maturity_description", "")}</div>' if data.get('maturity_description') else ''
+        
+        # Get maturity level and description
+        maturity_level = data.get('maturity_level', 'D')
+        maturity_level_num = data.get('maturity_level_num', 1)
+        maturity_description = data.get('maturity_description', '')
+        maturity_description_html = f'<div class="maturity-description">{maturity_description}</div>' if maturity_description else ''
+        
+        # Get analysis sections
+        structural_analysis = data.get('structural_analysis', '')
+        variance_analysis = data.get('variance_analysis', '')
+        ai_instability_explanation = data.get('ai_instability_explanation', '')
+        actionable_recommendations = data.get('actionable_recommendations', '')
+        
+        # Create individual slide items for carousel
+        analysis_slides = []
+        if structural_analysis:
+            analysis_slides.append(f'<div class="analysis-slide"><div class="analysis-section"><div class="analysis-title">判断が揃わない原因（構造的理由）</div><div class="analysis-content">{structural_analysis}</div></div></div>')
+        if variance_analysis:
+            analysis_slides.append(f'<div class="analysis-slide"><div class="analysis-section"><div class="analysis-title">スコアのばらつきと揃っていないポイント</div><div class="analysis-content">{variance_analysis}</div></div></div>')
+        if ai_instability_explanation:
+            analysis_slides.append(f'<div class="analysis-slide"><div class="analysis-section"><div class="analysis-title">AI活用が不安定な理由</div><div class="analysis-content">{ai_instability_explanation}</div></div></div>')
+        if actionable_recommendations:
+            analysis_slides.append(f'<div class="analysis-slide"><div class="analysis-section recommendations-section"><div class="analysis-title">次に何をすればいいか（選択肢）</div><div class="analysis-content">{actionable_recommendations}</div></div></div>')
+        
+        # Wrap slides in carousel container (draggable, no buttons)
+        if analysis_slides:
+            analysis_sections_html = f'<div class="section"><div class="section-title">組織分析</div><div class="analysis-carousel-container"><div class="analysis-carousel" id="analysisCarousel">{"".join(analysis_slides)}</div><div class="carousel-indicators" id="carouselIndicators"></div></div></div>'
+        else:
+            analysis_sections_html = ''
         
         # Get CTA section from diagnosis results (no default)
         cta_section_html = data.get('cta_section_html', '')
@@ -622,9 +886,11 @@ class ReportService:
             primary_avg=data.get('primary_avg', 0),
             process_avg=data.get('process_avg', 0),
             aes_avg=data.get('aes_avg', 0),
-            trend_analysis=data['trend_analysis'],
-            maturity_rating=data['maturity_rating'],
+            trend_analysis=data.get('trend_analysis', ''),
+            maturity_level=maturity_level,
+            maturity_level_num=maturity_level_num,
             maturity_description_html=maturity_description_html,
+            analysis_sections_html=analysis_sections_html,
             primary_data_json=primary_data_json,
             process_data_json=process_data_json,
             aes_data_json=aes_data_json,

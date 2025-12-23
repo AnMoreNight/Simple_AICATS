@@ -74,7 +74,10 @@ class ScoringEngine:
             primary_scores = {}
             sub_scores = {}
             process_scores = {}
-            aes_scores = {}
+            # AES scores: collect by component (clarity, logic, relevance) not by question
+            aes_clarity_list = []
+            aes_logic_list = []
+            aes_relevance_list = []
             
             # Process each question Q1-Q6
             for question in questions:
@@ -157,8 +160,13 @@ class ScoringEngine:
                         process_scores[process_item] = []
                     process_scores[process_item].append(process)
                 
-                # AES is per-question
-                aes_scores[question_id] = round(aes_score, 1)
+                # Collect AES components for aggregation (not per-question)
+                if aes_clarity > 0:
+                    aes_clarity_list.append(aes_clarity)
+                if aes_logic > 0:
+                    aes_logic_list.append(aes_logic)
+                if aes_relevance > 0:
+                    aes_relevance_list.append(aes_relevance)
             
             # Calculate averages for aggregated scores
             # Ensure all official categories are included (even if empty)
@@ -192,12 +200,19 @@ class ScoringEngine:
             avg_primary = sum(primary_avg.values()) / len(primary_avg) if primary_avg else 0.0
             avg_sub = sum(sub_avg.values()) / len(sub_avg) if sub_avg else 0.0
             avg_process = sum(process_avg.values()) / len(process_avg) if process_avg else 0.0
-            avg_aes = sum(aes_scores.values()) / len(aes_scores) if aes_scores else 0.0
+            # Calculate AES averages by component (not per-question)
+            avg_aes_clarity = sum(aes_clarity_list) / len(aes_clarity_list) if aes_clarity_list else 0.0
+            avg_aes_logic = sum(aes_logic_list) / len(aes_logic_list) if aes_logic_list else 0.0
+            avg_aes_relevance = sum(aes_relevance_list) / len(aes_relevance_list) if aes_relevance_list else 0.0
+            avg_aes = (avg_aes_clarity + avg_aes_logic + avg_aes_relevance) / 3 if (aes_clarity_list or aes_logic_list or aes_relevance_list) else 0.0
             
             # Round intermediate averages to 1 decimal place
             avg_primary = round(avg_primary, 1)
             avg_sub = round(avg_sub, 1)
             avg_process = round(avg_process, 1)
+            avg_aes_clarity = round(avg_aes_clarity, 1)
+            avg_aes_logic = round(avg_aes_logic, 1)
+            avg_aes_relevance = round(avg_aes_relevance, 1)
             avg_aes = round(avg_aes, 1)
             
             # Weighted total: PRIMARY 60% + SUB 20% + PROCESS 20%
@@ -208,12 +223,19 @@ class ScoringEngine:
                 avg_process * self.PROCESS_WEIGHT
             )
             
+            # AES output: aggregated by component (not per-question)
+            aes_output = {
+                'aes_clarity': avg_aes_clarity,
+                'aes_logic': avg_aes_logic,
+                'aes_relevance': avg_aes_relevance
+            }
+            
             # Round all dictionary values to ensure no floating point precision issues
             result = {
                 'scores_primary': self._round_dict_values(primary_avg, 1),
                 'scores_sub': self._round_dict_values(sub_avg, 1),
                 'process': self._round_dict_values(process_avg, 1),
-                'aes': self._round_dict_values(aes_scores, 1),
+                'aes': self._round_dict_values(aes_output, 1),
                 'total_score': round(weighted_total, 1),
                 'per_question': self._round_dict_values(per_question, 1)
             }

@@ -26,7 +26,7 @@
         
         /* Phone Frame */
         .phone-wrapper {
-            max-width: 414px;
+            max-width: 480px;
             width: 100%;
             margin: 0 auto;
             background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
@@ -93,14 +93,14 @@
         
         /* Section */
         .section {
-            padding: 24px 20px;
+            padding: 16px 20px;
             border-bottom: 1px solid #e0e0e0;
         }
         
         .section-title {
             font-size: 18px;
             font-weight: 600;
-            margin-bottom: 16px;
+            margin-bottom: 10px;
             color: #333;
         }
         
@@ -108,37 +108,52 @@
         .summary-grid {
             display: grid;
             grid-template-columns: 1fr;
-            gap: 16px;
-            margin-top: 16px;
+            gap: 10px;
+            margin-top: 10px;
         }
         
         .summary-item {
             background-color: #f8f9fa;
-            padding: 20px;
-            border-radius: 8px;
+            padding: 12px;
+            border-radius: 6px;
             text-align: center;
         }
         
         .summary-item-label {
-            font-size: 16px;
+            font-size: 14px;
             color: #666;
-            margin-bottom: 8px;
+            margin-bottom: 6px;
         }
         
         .summary-item-value {
-            font-size: 32px;
+            font-size: 28px;
             font-weight: bold;
             color: #4A90E2;
         }
         
-        .trend-text {
-            margin-top: 20px;
-            padding: 16px;
-            background-color: #f0f4ff;
-            border-left: 4px solid #4A90E2;
-            border-radius: 4px;
+        .summary-item.trend-item {
+            background: linear-gradient(135deg, #4A90E2 0%, #2980b9 100%);
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+        }
+        
+        .summary-item.trend-item .trend-label {
+            color: white;
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+        
+        .summary-item-value.trend-text {
             font-size: 16px;
-            line-height: 1.8;
+            font-weight: normal;
+            line-height: 1.6;
+            text-align: left;
+            padding: 0;
+            margin-top: 0;
+            color: white;
+            opacity: 0.95;
         }
         
         /* PRIMARY Distribution Chart Container */
@@ -320,6 +335,99 @@
             opacity: 0.9;
         }
         
+        /* Analysis Carousel */
+        .analysis-carousel-container {
+            position: relative;
+            margin: 16px 0;
+        }
+        
+        .analysis-carousel {
+            display: flex;
+            overflow-x: auto;
+            scroll-snap-type: x mandatory;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+            gap: 16px;
+            padding-bottom: 8px;
+            scroll-behavior: smooth;
+        }
+        
+        .analysis-carousel::-webkit-scrollbar {
+            display: none;
+        }
+        
+        .analysis-slide {
+            flex: 0 0 100%;
+            scroll-snap-align: start;
+            min-width: 0;
+        }
+        
+        .analysis-carousel {
+            cursor: grab;
+        }
+        
+        .analysis-carousel:active {
+            cursor: grabbing;
+        }
+        
+        .analysis-section {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 12px;
+            border-left: 4px solid #4A90E2;
+            height: 100%;
+            box-sizing: border-box;
+        }
+        
+        .analysis-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        
+        .analysis-content {
+            font-size: 16px;
+            line-height: 1.8;
+            color: #555;
+            white-space: pre-wrap;
+        }
+        
+        .analysis-section.recommendations-section {
+            background: linear-gradient(135deg, #e6f7ff 0%, #f0f9ff 100%);
+            border-left-color: #2980b9;
+        }
+        
+        .analysis-section.recommendations-section .analysis-title {
+            color: #2980b9;
+            border-bottom-color: #b3d9f0;
+        }
+        
+        .carousel-indicators {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 8px;
+        }
+        
+        .carousel-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #ccc;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        
+        .carousel-indicator.active {
+            background-color: #4A90E2;
+            width: 24px;
+            border-radius: 4px;
+        }
+        
         /* CTA Section */
         .cta-section {
             background: linear-gradient(135deg, #4A90E2 0%, #2980b9 100%);
@@ -340,7 +448,7 @@
             opacity: 0.9;
             line-height: 1.6;
             text-align: left;
-            max-width: 600px;
+            max-width: 800px;
             margin-left: auto;
             margin-right: auto;
         }
@@ -430,15 +538,18 @@
             <div class="section-title">サマリー</div>
             <div class="summary-grid">
                 <div class="summary-item">
-                    <div class="summary-item-label">診断人数</div>
+                    <div class="summary-item-label">人数</div>
                     <div class="summary-item-value">${count}名</div>
                 </div>
                 <div class="summary-item">
                     <div class="summary-item-label">平均スコア</div>
                     <div class="summary-item-value">${avg_total_score}</div>
                 </div>
+                <div class="summary-item trend-item">
+                    <div class="summary-item-label trend-label">総合傾向</div>
+                    <div class="summary-item-value trend-text">${trend_analysis}</div>
+                </div>
             </div>
-            <div class="trend-text">${trend_analysis}</div>
         </div>
         
          <!-- PRIMARY Bar Chart -->
@@ -474,16 +585,20 @@
             <div class="item-scores-grid" id="aesItemScores"></div>
         </div>
         
-        <!-- AI Maturity Rating -->
+        <!-- Judgment Base Maturity Level -->
         <div class="section">
-            <div class="section-title">AI活用成熟度</div>
+            <div class="section-title">判断基盤の成熟度レベル</div>
             <div class="maturity-section">
-                <div class="maturity-rating">${maturity_rating}</div>
-                <div class="maturity-label">評価レベル</div>
+                <div class="maturity-rating">${maturity_level}</div>
+                <div class="maturity-label">レベル ${maturity_level_num}（判断基盤の成熟段階）</div>
                 ${maturity_description_html}
             </div>
         </div>
         
+        <!-- Organizational Analysis Sections -->
+        ${analysis_sections_html}
+        
+        <!-- Introduction Decision Materials -->
         <!-- CTA Section -->
         ${cta_section_html}
             </div>
@@ -846,6 +961,121 @@
                 `;
                 aesItemScoresContainer.appendChild(card);
             }
+        }
+        // Analysis Carousel Functionality with Drag Support
+        const carousel = document.getElementById('analysisCarousel');
+        const indicators = document.getElementById('carouselIndicators');
+        
+        if (carousel && indicators) {
+            const slides = carousel.querySelectorAll('.analysis-slide');
+            const slideCount = slides.length;
+            let currentIndex = 0;
+            
+            // Create indicators
+            for (let i = 0; i < slideCount; i++) {
+                const indicator = document.createElement('div');
+                indicator.className = 'carousel-indicator' + (i === 0 ? ' active' : '');
+                indicator.addEventListener('click', () => {
+                    goToSlide(i);
+                });
+                indicators.appendChild(indicator);
+            }
+            
+            // Drag functionality (mouse and touch)
+            let isDragging = false;
+            let startX = 0;
+            let scrollLeft = 0;
+            
+            // Mouse events
+            carousel.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                carousel.style.cursor = 'grabbing';
+                startX = e.pageX - carousel.offsetLeft;
+                scrollLeft = carousel.scrollLeft;
+            });
+            
+            carousel.addEventListener('mouseleave', () => {
+                isDragging = false;
+                carousel.style.cursor = 'grab';
+            });
+            
+            carousel.addEventListener('mouseup', () => {
+                isDragging = false;
+                carousel.style.cursor = 'grab';
+                updateActiveIndicator();
+            });
+            
+            carousel.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+                e.preventDefault();
+                const x = e.pageX - carousel.offsetLeft;
+                const walk = (x - startX) * 2; // Scroll speed multiplier
+                carousel.scrollLeft = scrollLeft - walk;
+            });
+            
+            // Touch events
+            let touchStartX = 0;
+            let touchScrollLeft = 0;
+            
+            carousel.addEventListener('touchstart', (e) => {
+                isDragging = true;
+                touchStartX = e.touches[0].pageX - carousel.offsetLeft;
+                touchScrollLeft = carousel.scrollLeft;
+            });
+            
+            carousel.addEventListener('touchmove', (e) => {
+                if (!isDragging) return;
+                const x = e.touches[0].pageX - carousel.offsetLeft;
+                const walk = (x - touchStartX) * 2;
+                carousel.scrollLeft = touchScrollLeft - walk;
+            });
+            
+            carousel.addEventListener('touchend', () => {
+                isDragging = false;
+                updateActiveIndicator();
+            });
+            
+            // Set initial cursor style
+            carousel.style.cursor = 'grab';
+            carousel.style.userSelect = 'none';
+            
+            // Update active indicator on scroll
+            let scrollTimeout;
+            carousel.addEventListener('scroll', () => {
+                clearTimeout(scrollTimeout);
+                scrollTimeout = setTimeout(() => {
+                    updateActiveIndicator();
+                }, 100);
+            });
+            
+            function goToSlide(index) {
+                if (index < 0 || index >= slideCount) return;
+                currentIndex = index;
+                const slide = slides[index];
+                if (slide) {
+                    slide.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
+                }
+                updateActiveIndicator();
+            }
+            
+            function updateActiveIndicator() {
+                const scrollLeft = carousel.scrollLeft;
+                const slideWidth = carousel.offsetWidth;
+                const newIndex = Math.round(scrollLeft / slideWidth);
+                currentIndex = newIndex;
+                
+                const indicatorElements = indicators.querySelectorAll('.carousel-indicator');
+                indicatorElements.forEach((ind, i) => {
+                    if (i === currentIndex) {
+                        ind.classList.add('active');
+                    } else {
+                        ind.classList.remove('active');
+                    }
+                });
+            }
+            
+            // Initialize
+            updateActiveIndicator();
         }
     </script>
 </body>

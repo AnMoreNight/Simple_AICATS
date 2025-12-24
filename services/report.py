@@ -2,6 +2,7 @@
 Report generation service for individual and organization reports.
 """
 
+import os
 import json
 import statistics
 import hashlib
@@ -16,7 +17,8 @@ from string import Template
 class ReportService:
     """Service for generating HTML reports from diagnosis results."""
     
-    REPORT_BASE_URL = "https://ai-cats.app/report"
+    # REPORT_BASE_URL will be set dynamically based on deployment
+    REPORT_BASE_URL = os.environ.get('REPORT_BASE_URL', '/report')
     
     # Mapping from English PROCESS keys to Japanese labels
     PROCESS_LABELS_JP = {

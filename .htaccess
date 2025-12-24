@@ -1,0 +1,36 @@
+# xserver .htaccess configuration for Flask app
+
+# Enable rewrite engine
+RewriteEngine On
+
+# Serve static files directly (frontend)
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+
+# Route API requests to Flask
+RewriteCond %{REQUEST_URI} ^/api/
+RewriteRule ^api/(.*)$ /app.py/$1 [L,QSA]
+
+# Route report files
+RewriteCond %{REQUEST_URI} ^/report/
+RewriteRule ^report/(.*)$ /report/$1 [L]
+
+# Route frontend files
+RewriteCond %{REQUEST_URI} ^/$
+RewriteRule ^$ /frontend/index.html [L]
+
+# Default: route to Flask app
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ /app.py/$1 [L,QSA]
+
+# Security headers
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set X-XSS-Protection "1; mode=block"
+</IfModule>
+
+# Prevent directory listing
+Options -Indexes
+

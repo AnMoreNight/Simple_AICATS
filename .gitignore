@@ -7,6 +7,7 @@ core/__pycache__/
 services/__pycache__/
 report/
 frontend/
+UBUNTU_DEPLOYMENT.md
 PROMPT_PM1FINAL_JP.txt
 PROMPT_PM5FINAL_JP.txt
 PROMPT_PM1RAW_JP.txt

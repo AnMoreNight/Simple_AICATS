@@ -18,7 +18,8 @@ class ReportService:
     """Service for generating HTML reports from diagnosis results."""
     
     # REPORT_BASE_URL will be set dynamically based on deployment
-    REPORT_BASE_URL = os.environ.get('REPORT_BASE_URL', '/report')
+    # Default to Vercel frontend URL
+    REPORT_BASE_URL = os.environ.get('REPORT_BASE_URL', 'https://simple-aicats.vercel.app/report')
     
     # Mapping from English PROCESS keys to Japanese labels
     PROCESS_LABELS_JP = {
@@ -86,7 +87,7 @@ class ReportService:
         # Generate hash ID and URL
         timestamp = datetime.now().isoformat()
         hash_id = self._generate_hash_id(respondent['id'], timestamp)
-        report_url = f"{self.REPORT_BASE_URL}/{hash_id}"
+        report_url = f"{self.REPORT_BASE_URL}/{hash_id}.html"
         
         # Save to file (use hash_id as filename for easier lookup)
         filename = f"{hash_id}.html"
@@ -339,7 +340,7 @@ class ReportService:
         # Generate hash ID and URL
         timestamp = datetime.now().isoformat()
         hash_id = self._generate_hash_id(company_name, timestamp)
-        report_url = f"{self.REPORT_BASE_URL}/{hash_id}"
+        report_url = f"{self.REPORT_BASE_URL}/{hash_id}.html"
         
         # Save to file (use hash_id as filename for easier lookup)
         filename = f"{hash_id}.html"
